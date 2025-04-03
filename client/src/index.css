@@ -11,3 +11,50 @@
     @apply font-sans antialiased bg-background text-foreground;
   }
 }
+
+/* Hide scrollbars but maintain scroll functionality */
+.hide-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
+
+/* Expandable timeslots styling */
+.expanded-timeslot {
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* More readable timeslots for small screens */
+@media (max-width: 1024px) {
+  .calendar-container {
+    --min-column-width: 120px;
+  }
+
+  /* Make week columns take at least the minimum width */
+  .calendar-column {
+    min-width: var(--min-column-width);
+  }
+}
+
+/* Additional mobile optimizations */
+@media (max-width: 768px) {
+  /* Add some breathing room on mobile */
+  :root {
+    --base-spacing: 12px;
+  }
+
+  .calendar-container {
+    padding: var(--base-spacing);
+  }
+
+  /* Better touch targets on mobile */
+  .mobile-touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

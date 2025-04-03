@@ -1,14 +1,43 @@
-import express, { type Request, Response, NextFunction } from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import express from "express";
+import { createServer } from "http";
+import { debugTest } from "./debug-test";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+
+// Load environment variables from .env file
+dotenv.config();
+
+// This will be explicitly executed when running in debug mode
+// and makes it easy to verify the debugger is working
+const debugMode = process.execArgv.some(
+  (arg) => arg.includes("--inspect") || arg.includes("--debug")
+);
+if (debugMode) {
+  console.log("🔵 Debugger detected, debug mode is active");
+}
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+const port = process.env.PORT || 3000;
 
+// Enable CORS for frontend
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+);
+
+// Add basic request logging
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
+  console.log(
+    `${new Date().toISOString()} - ${req.method} ${path} - Request started`
+  );
+
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
   const originalResJson = res.json;
@@ -20,7 +49,9 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      let logLine = `${new Date().toISOString()} - ${req.method} ${path} ${
+        res.statusCode
+      } in ${duration}ms`;
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
@@ -29,42 +60,89 @@ app.use((req, res, next) => {
         logLine = logLine.slice(0, 79) + "…";
       }
 
-      log(logLine);
+      console.log(logLine);
     }
   });
 
   next();
 });
 
-(async () => {
-  const server = await registerRoutes(app);
-
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
-  });
-
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
+// Global error handler
+app.use(
+  (
+    err: Error,
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    console.error("Unhandled error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
+);
 
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-  });
-})();
+// Handle uncaught exceptions
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+});
+
+// Handle unhandled promise rejections
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled rejection at:", promise, "reason:", reason);
+});
+
+async function main() {
+  try {
+    // Run debug test when in debug mode
+    if (debugMode) {
+      console.log("Running debug test...");
+      debugTest(); // You can set a breakpoint here in VSCode
+    }
+
+    console.log("Environment variables loaded");
+    console.log("Environment:", {
+      GOOGLE_SHEET_ID: process.env.GOOGLE_SHEET_ID ? "Present" : "Missing",
+      GOOGLE_CALENDAR_ID: process.env.GOOGLE_CALENDAR_ID
+        ? "Present"
+        : "Missing",
+      PORT: process.env.PORT || "3000 (default)",
+    });
+
+    // Configure Express middleware
+    app.use(express.json());
+    console.log("Express middleware configured");
+
+    console.log("Starting server initialization...");
+
+    // Create HTTP server instance
+    const server = createServer(app);
+    console.log("HTTP server instance created");
+
+    // Graceful shutdown
+    process.on("SIGTERM", () => {
+      console.log("SIGTERM signal received. Closing HTTP server...");
+      server.close(() => {
+        console.log("HTTP server closed");
+        process.exit(0);
+      });
+    });
+
+    // Register routes
+    await registerRoutes(app);
+    console.log("API routes registered successfully");
+
+    // Start the server
+    server.listen(port, () => {
+      console.log(`Server is running on port ${port}`);
+    });
+
+    return server;
+  } catch (error) {
+    console.error("Error starting server:", error);
+    process.exit(1);
+  }
+}
+
+main().catch((error) => {
+  console.error("Fatal error:", error);
+  process.exit(1);
+});
