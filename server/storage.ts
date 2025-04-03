@@ -1,0 +1,346 @@
+import { 
+  users, type User, type InsertUser, 
+  type Timeslot, type InsertTimeslot, 
+  type Booking, type InsertBooking,
+  type ClientRule, type InsertClientRule,
+  type MeetingType, type InsertMeetingType,
+  type ClientRuleWithDisplayName
+} from "@shared/schema";
+
+// Extend the storage interface with CRUD methods
+export interface IStorage {
+  // User methods
+  getUser(id: number): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  
+  // Timeslot methods
+  getTimeslots(): Promise<Timeslot[]>;
+  getTimeslotsByDate(date: Date): Promise<Timeslot[]>;
+  getTimeslotsByDateRange(startDate: Date, endDate: Date): Promise<Timeslot[]>;
+  getTimeslotsByClientType(clientType: string): Promise<Timeslot[]>;
+  getTimeslotsByMeetingType(meetingType: string): Promise<Timeslot[]>;
+  getTimeslotsByClientAndMeetingType(clientType: string, meetingType: string): Promise<Timeslot[]>;
+  getTimeslotById(id: number): Promise<Timeslot | undefined>;
+  createTimeslot(timeslot: InsertTimeslot): Promise<Timeslot>;
+  updateTimeslot(id: number, timeslot: Partial<InsertTimeslot>): Promise<Timeslot | undefined>;
+  deleteTimeslot(id: number): Promise<boolean>;
+  createTimeslotsForSlotSplit(originalId: number, bookingStart: Date, bookingEnd: Date): Promise<Timeslot[]>;
+
+  // Booking methods
+  getBookings(): Promise<Booking[]>;
+  getBookingById(id: number): Promise<Booking | undefined>;
+  getBookingsByTimeslotId(timeslotId: number): Promise<Booking[]>;
+  createBooking(booking: InsertBooking): Promise<Booking>;
+  
+  // Client rule methods
+  getClientRules(): Promise<ClientRule[]>;
+  getClientRuleByType(clientType: string): Promise<ClientRule | undefined>;
+  createClientRule(rule: InsertClientRule): Promise<ClientRule>;
+  updateClientRule(id: number, rule: Partial<InsertClientRule>): Promise<ClientRule | undefined>;
+  deleteClientRule(id: number): Promise<boolean>;
+  
+  // Meeting type methods
+  getMeetingTypes(): Promise<MeetingType[]>;
+  getMeetingTypeByName(name: string): Promise<MeetingType | undefined>;
+  createMeetingType(type: InsertMeetingType): Promise<MeetingType>;
+}
+
+export class MemStorage implements IStorage {
+  private users: Map<number, User>;
+  private timeslots: Map<number, Timeslot>;
+  private bookings: Map<number, Booking>;
+  private clientRules: Map<number, ClientRule>;
+  private meetingTypes: Map<number, MeetingType>;
+  
+  private userCurrentId: number;
+  private timeslotCurrentId: number;
+  private bookingCurrentId: number;
+  private clientRuleCurrentId: number;
+  private meetingTypeCurrentId: number;
+
+  constructor() {
+    this.users = new Map();
+    this.timeslots = new Map();
+    this.bookings = new Map();
+    this.clientRules = new Map();
+    this.meetingTypes = new Map();
+    
+    this.userCurrentId = 1;
+    this.timeslotCurrentId = 1;
+    this.bookingCurrentId = 1;
+    this.clientRuleCurrentId = 1;
+    this.meetingTypeCurrentId = 1;
+  }
+
+  // User methods
+  async getUser(id: number): Promise<User | undefined> {
+    return this.users.get(id);
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.username === username,
+    );
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const id = this.userCurrentId++;
+    const user: User = { ...insertUser, id };
+    this.users.set(id, user);
+    return user;
+  }
+
+  // Timeslot methods
+  async getTimeslots(): Promise<Timeslot[]> {
+    return Array.from(this.timeslots.values());
+  }
+
+  async getTimeslotsByDate(date: Date): Promise<Timeslot[]> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    return Array.from(this.timeslots.values()).filter(
+      (timeslot) => 
+        new Date(timeslot.startTime) >= startOfDay && 
+        new Date(timeslot.endTime) <= endOfDay &&
+        timeslot.isAvailable
+    );
+  }
+
+  async getTimeslotsByDateRange(startDate: Date, endDate: Date): Promise<Timeslot[]> {
+    return Array.from(this.timeslots.values()).filter(
+      (timeslot) => 
+        new Date(timeslot.startTime) >= startDate && 
+        new Date(timeslot.endTime) <= endDate &&
+        timeslot.isAvailable
+    );
+  }
+
+  async getTimeslotsByClientType(clientType: string): Promise<Timeslot[]> {
+    if (clientType === 'all') {
+      return this.getTimeslots().then(slots => slots.filter(s => s.isAvailable));
+    }
+    
+    return Array.from(this.timeslots.values()).filter(
+      (timeslot) => 
+        (timeslot.clientType === clientType || timeslot.clientType === 'all') &&
+        timeslot.isAvailable
+    );
+  }
+  
+  async getTimeslotsByMeetingType(meetingType: string): Promise<Timeslot[]> {
+    return Array.from(this.timeslots.values()).filter(
+      (timeslot) => 
+        timeslot.meetingTypes.includes(meetingType) &&
+        timeslot.isAvailable
+    );
+  }
+  
+  async getTimeslotsByClientAndMeetingType(clientType: string, meetingType: string): Promise<Timeslot[]> {
+    return Array.from(this.timeslots.values()).filter(
+      (timeslot) => 
+        (timeslot.clientType === clientType || timeslot.clientType === 'all') &&
+        timeslot.meetingTypes.includes(meetingType) &&
+        timeslot.isAvailable
+    );
+  }
+
+  async getTimeslotById(id: number): Promise<Timeslot | undefined> {
+    return this.timeslots.get(id);
+  }
+
+  async createTimeslot(insertTimeslot: InsertTimeslot): Promise<Timeslot> {
+    const id = this.timeslotCurrentId++;
+    
+    // Ensure all required fields have values
+    const timeslot: Timeslot = { 
+      ...insertTimeslot, 
+      id,
+      clientType: insertTimeslot.clientType || 'all',
+      meetingTypes: insertTimeslot.meetingTypes || '',
+      isAvailable: insertTimeslot.isAvailable ?? true,
+      googleEventId: insertTimeslot.googleEventId || null,
+      parentEventId: insertTimeslot.parentEventId || null
+    };
+    
+    this.timeslots.set(id, timeslot);
+    return timeslot;
+  }
+
+  async updateTimeslot(id: number, timeslotData: Partial<InsertTimeslot>): Promise<Timeslot | undefined> {
+    const existingTimeslot = this.timeslots.get(id);
+    
+    if (!existingTimeslot) {
+      return undefined;
+    }
+    
+    const updatedTimeslot = { ...existingTimeslot, ...timeslotData };
+    this.timeslots.set(id, updatedTimeslot);
+    
+    return updatedTimeslot;
+  }
+
+  async deleteTimeslot(id: number): Promise<boolean> {
+    return this.timeslots.delete(id);
+  }
+  
+  async createTimeslotsForSlotSplit(
+    originalId: number, 
+    bookingStart: Date, 
+    bookingEnd: Date
+  ): Promise<Timeslot[]> {
+    const original = await this.getTimeslotById(originalId);
+    if (!original) {
+      throw new Error("Original timeslot not found for splitting");
+    }
+    
+    const originalStart = new Date(original.startTime);
+    const originalEnd = new Date(original.endTime);
+    const newSlots: Timeslot[] = [];
+    
+    // Create before slot if there's time before the booking
+    if (bookingStart.getTime() > originalStart.getTime()) {
+      const beforeSlot = await this.createTimeslot({
+        startTime: originalStart,
+        endTime: bookingStart,
+        clientType: original.clientType,
+        meetingTypes: original.meetingTypes,
+        isAvailable: true,
+        parentEventId: original.googleEventId,
+      });
+      newSlots.push(beforeSlot);
+    }
+    
+    // Create after slot if there's time after the booking
+    if (bookingEnd.getTime() < originalEnd.getTime()) {
+      const afterSlot = await this.createTimeslot({
+        startTime: bookingEnd,
+        endTime: originalEnd,
+        clientType: original.clientType,
+        meetingTypes: original.meetingTypes,
+        isAvailable: true,
+        parentEventId: original.googleEventId,
+      });
+      newSlots.push(afterSlot);
+    }
+    
+    return newSlots;
+  }
+
+  // Booking methods
+  async getBookings(): Promise<Booking[]> {
+    return Array.from(this.bookings.values());
+  }
+
+  async getBookingById(id: number): Promise<Booking | undefined> {
+    return this.bookings.get(id);
+  }
+
+  async getBookingsByTimeslotId(timeslotId: number): Promise<Booking[]> {
+    return Array.from(this.bookings.values()).filter(
+      (booking) => booking.timeslotId === timeslotId
+    );
+  }
+
+  async createBooking(insertBooking: InsertBooking): Promise<Booking> {
+    const id = this.bookingCurrentId++;
+    
+    // Ensure all required fields have values
+    const booking: Booking = { 
+      ...insertBooking, 
+      id,
+      createdAt: new Date(),
+      googleEventId: null,
+      phone: insertBooking.phone || null,
+      notes: insertBooking.notes || null
+    };
+    
+    this.bookings.set(id, booking);
+    
+    // Get the timeslot that's being booked
+    const timeslot = this.timeslots.get(insertBooking.timeslotId);
+    if (!timeslot) {
+      throw new Error("Timeslot not found");
+    }
+    
+    // The duration should be passed in the booking data
+    const bookingStart = new Date(timeslot.startTime);
+    const bookingEnd = new Date(bookingStart);
+    bookingEnd.setMinutes(bookingEnd.getMinutes() + insertBooking.duration);
+    
+    // Create slots before and after the booking if necessary
+    await this.createTimeslotsForSlotSplit(timeslot.id, bookingStart, bookingEnd);
+    
+    // Mark the original timeslot as unavailable
+    await this.updateTimeslot(timeslot.id, { isAvailable: false });
+    
+    return booking;
+  }
+  
+  // Client rule methods
+  async getClientRules(): Promise<ClientRule[]> {
+    return Array.from(this.clientRules.values());
+  }
+  
+  async getClientRuleByType(clientType: string): Promise<ClientRule | undefined> {
+    return Array.from(this.clientRules.values()).find(
+      (rule) => rule.clientType === clientType && rule.isActive
+    );
+  }
+  
+  async createClientRule(rule: InsertClientRule): Promise<ClientRule> {
+    const id = this.clientRuleCurrentId++;
+    
+    // Ensure isActive field has a value and displayName is null if not provided
+    const clientRule: ClientRule = { 
+      ...rule, 
+      id,
+      isActive: rule.isActive ?? true,
+      displayName: rule.displayName ?? null
+    };
+    
+    this.clientRules.set(id, clientRule);
+    return clientRule;
+  }
+  
+  async updateClientRule(id: number, ruleData: Partial<InsertClientRule>): Promise<ClientRule | undefined> {
+    const existingRule = this.clientRules.get(id);
+    
+    if (!existingRule) {
+      return undefined;
+    }
+    
+    const updatedRule = { ...existingRule, ...ruleData };
+    this.clientRules.set(id, updatedRule);
+    
+    return updatedRule;
+  }
+  
+  async deleteClientRule(id: number): Promise<boolean> {
+    return this.clientRules.delete(id);
+  }
+  
+  // Meeting type methods
+  async getMeetingTypes(): Promise<MeetingType[]> {
+    return Array.from(this.meetingTypes.values());
+  }
+  
+  async getMeetingTypeByName(name: string): Promise<MeetingType | undefined> {
+    return Array.from(this.meetingTypes.values()).find(
+      (type) => type.name.toLowerCase() === name.toLowerCase()
+    );
+  }
+  
+  async createMeetingType(type: InsertMeetingType): Promise<MeetingType> {
+    const id = this.meetingTypeCurrentId++;
+    const meetingType: MeetingType = { ...type, id };
+    this.meetingTypes.set(id, meetingType);
+    return meetingType;
+  }
+}
+
+export const storage = new MemStorage();
