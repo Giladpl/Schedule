@@ -1,4 +1,12 @@
-import { pgTable, text, serial, integer, boolean, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  integer,
+  pgEnum,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -20,7 +28,11 @@ export type User = typeof users.$inferSelect;
 // Enhanced schemas for the scheduling system
 // We don't restrict client types to predefined values - using text field instead
 // export const clientTypeEnum = pgEnum("client_type", ["new", "vip", "quick", "all"]);
-export const meetingTypeEnum = pgEnum("meeting_type", ["zoom", "phone", "in-person"]);
+export const meetingTypeEnum = pgEnum("meeting_type", [
+  "zoom",
+  "phone",
+  "in-person",
+]);
 
 // Schema for meeting types
 export const meetingTypes = pgTable("meeting_types", {
@@ -113,4 +125,5 @@ export const bookingFormSchema = insertBookingSchema.extend({
   notes: z.string().optional(),
   meetingType: z.string().min(1, "Meeting type is required"),
   duration: z.number().int().positive("Duration must be a positive number"),
+  startTime: z.date().optional(),
 });
