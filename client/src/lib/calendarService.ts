@@ -486,5 +486,16 @@ export async function fetchClientData(): Promise<ClientData> {
 
 // Client type display names
 export function getClientTypeDisplayName(clientType: string): string {
-  return clientType;
+  // מיפוי שמות סוגי לקוחות לשמות תצוגה
+  const displayNames: Record<string, string> = {
+    all: "כל הלקוחות",
+    new_customer: "לקוח חדש",
+    "פולי אחים": "פולי אחים",
+    vip: "לקוח VIP",
+    quick: "פגישה מהירה",
+    default: clientType, // שם ברירת מחדל אם אין מיפוי
+  };
+
+  // להחזיר שם תצוגה מותאם או את שם הלקוח המקורי אם אין מיפוי
+  return displayNames[clientType] || displayNames.default;
 }

@@ -7,9 +7,17 @@ import { useEffect, useMemo, useState } from "react";
 
 // Meeting type to icon mapping
 const MEETING_TYPE_ICONS: Record<string, React.ReactNode> = {
-  טלפון: <Phone size={14} />,
-  זום: <Video size={14} />,
-  פגישה: <Users size={14} />,
+  טלפון: <Phone size={14} className="text-white" />,
+  זום: <Video size={14} className="text-white" />,
+  פגישה: <Users size={14} className="text-white" />,
+};
+
+// Meeting type to color and hebrew display name mapping
+const MEETING_TYPE_STYLES: Record<string, { color: string; name: string }> = {
+  טלפון: { color: "#34a853", name: "טלפון" },
+  זום: { color: "#4285f4", name: "זום" },
+  פגישה: { color: "#ea4335", name: "פגישה" },
+  default: { color: "#8b5cf6", name: "" },
 };
 
 // Add a useWindowSize hook to track screen size
@@ -164,6 +172,15 @@ function ExpandableTimeslots({
   // Collect all unique client types
   const clientTypes = Array.from(new Set(slots.map((slot) => slot.clientType)));
 
+  // Get client display names
+  const clientDisplayNames = clientTypes.map((type) => ({
+    type,
+    displayName: getClientTypeDisplayName(type),
+    color:
+      CLIENT_TYPE_COLORS[type as keyof typeof CLIENT_TYPE_COLORS] ||
+      CLIENT_TYPE_COLORS.default,
+  }));
+
   // Collect all unique meeting types
   const meetingTypes = Array.from(
     new Set(
@@ -219,14 +236,15 @@ function ExpandableTimeslots({
             </div>
 
             {/* Client types */}
-            {clientTypes.length > 0 && (
+            {clientDisplayNames.length > 0 && (
               <div className="flex flex-wrap justify-center gap-1 mb-2">
-                {clientTypes.map((type, idx) => (
+                {clientDisplayNames.map((client, idx) => (
                   <span
                     key={idx}
-                    className="text-[10px] px-1.5 py-0.5 bg-white bg-opacity-70 rounded-full"
+                    className="text-[10px] px-1.5 py-0.5 rounded-md text-white font-medium"
+                    style={{ backgroundColor: client.color }}
                   >
-                    {type}
+                    {client.displayName}
                   </span>
                 ))}
               </div>
@@ -235,18 +253,27 @@ function ExpandableTimeslots({
 
           {/* Footer with meeting types */}
           <div className="flex justify-center gap-1 p-2 border-t border-blue-200 bg-blue-50 rounded-b-lg">
-            {meetingTypes.map((type, idx) => (
-              <div
-                key={idx}
-                className="flex items-center bg-white px-2 py-1 rounded-full text-[10px] shadow-sm"
-                title={type}
-              >
-                <span className="mr-1">
-                  {MEETING_TYPE_ICONS[type] || <Calendar size={10} />}
-                </span>
-                <span>{type}</span>
-              </div>
-            ))}
+            {meetingTypes.map((type, idx) => {
+              const style =
+                MEETING_TYPE_STYLES[type] || MEETING_TYPE_STYLES.default;
+              return (
+                <div
+                  key={idx}
+                  className="flex items-center px-2 py-1 rounded-full text-[10px]"
+                  style={{ backgroundColor: style.color }}
+                  title={type}
+                >
+                  <span className="mr-1">
+                    {MEETING_TYPE_ICONS[type] || (
+                      <Calendar size={10} className="text-white" />
+                    )}
+                  </span>
+                  <span className="text-white font-medium">
+                    {style.name || type}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (

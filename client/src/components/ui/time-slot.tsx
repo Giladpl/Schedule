@@ -1,3 +1,4 @@
+import { getClientTypeDisplayName } from "@/lib/calendarService";
 import { cn } from "@/lib/utils";
 import { Timeslot } from "@shared/schema";
 import { Calendar, Clock, Phone, Users, Video } from "lucide-react";
@@ -20,9 +21,17 @@ export const CLIENT_TYPE_COLORS: Record<string, string> = {
 
 // Meeting type to icon mapping
 const MEETING_TYPE_ICONS: Record<string, React.ReactNode> = {
-  טלפון: <Phone size={14} className="text-blue-500" />,
-  זום: <Video size={14} className="text-green-500" />,
-  פגישה: <Users size={14} className="text-amber-500" />,
+  טלפון: <Phone size={14} className="text-white" />,
+  זום: <Video size={14} className="text-white" />,
+  פגישה: <Users size={14} className="text-white" />,
+};
+
+// Meeting type to color and hebrew display name mapping
+const MEETING_TYPE_STYLES: Record<string, { color: string; name: string }> = {
+  טלפון: { color: "#34a853", name: "טלפון" },
+  זום: { color: "#4285f4", name: "זום" },
+  פגישה: { color: "#ea4335", name: "פגישה" },
+  default: { color: "#8b5cf6", name: "" },
 };
 
 interface TimeSlotProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -75,6 +84,9 @@ export function TimeSlot({
     .map((type) => type.trim())
     .filter(Boolean);
 
+  // Get client display name
+  const clientDisplayName = getClientTypeDisplayName(timeslot.clientType);
+
   return (
     <div
       className={cn(
@@ -92,10 +104,10 @@ export function TimeSlot({
       {/* Client type badge */}
       <div className="absolute top-1 right-1">
         <span
-          className="text-xs px-1 py-0.5 rounded-full font-medium"
+          className="text-xs px-2 py-0.5 rounded-md font-medium shadow-sm"
           style={{ backgroundColor: clientTypeColor, color: "white" }}
         >
-          {timeslot.clientType}
+          {clientDisplayName}
         </span>
       </div>
 
@@ -110,21 +122,28 @@ export function TimeSlot({
 
       {/* Meeting types as icons */}
       {meetingTypesList.length > 0 && meetingTypesList[0] !== "all" && (
-        <div className="mt-1 flex flex-wrap gap-1">
-          {meetingTypesList.map((type, index) => (
-            <div
-              key={index}
-              className="flex items-center bg-gray-50 px-1.5 py-0.5 rounded text-[10px]"
-              title={type}
-            >
-              <span className="mr-1">
-                {MEETING_TYPE_ICONS[type] || (
-                  <Calendar size={14} className="text-gray-500" />
-                )}
-              </span>
-              <span className="text-gray-700">{type}</span>
-            </div>
-          ))}
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {meetingTypesList.map((type, index) => {
+            const style =
+              MEETING_TYPE_STYLES[type] || MEETING_TYPE_STYLES.default;
+            return (
+              <div
+                key={index}
+                className="flex items-center px-2 py-1 rounded-full text-[10px]"
+                style={{ backgroundColor: style.color }}
+                title={type}
+              >
+                <span className="mr-1">
+                  {MEETING_TYPE_ICONS[type] || (
+                    <Calendar size={14} className="text-white" />
+                  )}
+                </span>
+                <span className="text-white font-medium">
+                  {style.name || type}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
