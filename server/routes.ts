@@ -79,6 +79,11 @@ export async function registerRoutes(app: Express): Promise<void> {
     console.log("[Debug] Timeslots endpoint hit");
     console.log("[Debug] Query params:", req.query);
     console.log("[Debug] Request headers:", req.headers);
+    console.log(
+      `[Debug] Full request URL: ${req.protocol}://${req.get("host")}${
+        req.originalUrl
+      }`
+    );
     try {
       const { start, end, type, meetingType } = req.query;
       console.log("[Debug] Parsed query params:", {
@@ -93,7 +98,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (start && end) {
         const startDate = new Date(start as string);
         const endDate = new Date(end as string);
-        console.log("Fetching timeslots between", startDate, "and", endDate);
+        console.log(
+          `[Debug] Fetching timeslots between ${startDate.toISOString()} and ${endDate.toISOString()}`
+        );
 
         if (type && meetingType) {
           // Filter by date range, client type, and meeting type
@@ -259,6 +266,22 @@ export async function registerRoutes(app: Express): Promise<void> {
         timeslots = await storage.getTimeslots();
         timeslots = timeslots.filter((ts) => ts.isAvailable);
         console.log("Found", timeslots.length, "available timeslots");
+      }
+
+      console.log(
+        `[Debug] Final response has ${timeslots?.length || 0} timeslots`
+      );
+      if (timeslots?.length > 0) {
+        console.log(
+          `[Debug] First timeslot in response: ${JSON.stringify(timeslots[0])}`
+        );
+        console.log(
+          `[Debug] Last timeslot in response: ${JSON.stringify(
+            timeslots[timeslots.length - 1]
+          )}`
+        );
+      } else {
+        console.log(`[Debug] No timeslots found in final response`);
       }
 
       console.log("Sending timeslots response");
@@ -776,6 +799,70 @@ export async function registerRoutes(app: Express): Promise<void> {
       res
         .status(500)
         .json({ error: "Failed to sync client rules from Google Sheets" });
+    }
+  });
+
+  // Add a debug endpoint to check storage
+  app.get("/api/debug/storage-stats", async (req, res) => {
+    try {
+      const timeslots = await storage.getTimeslots();
+      const bookings = await storage.getBookings();
+      const clientRules = await storage.getClientRules();
+      const meetingTypes = await storage.getMeetingTypes();
+
+      // Count available timeslots
+      const availableTimeslots = timeslots.filter(
+        (ts) => ts.isAvailable
+      ).length;
+
+      // Group timeslots by date
+      const timeslotsByDate: Record<string, number> = {};
+      timeslots.forEach((ts) => {
+        const date = new Date(ts.startTime).toISOString().split("T")[0];
+        timeslotsByDate[date] = (timeslotsByDate[date] || 0) + 1;
+      });
+
+      // Count timeslots by client type
+      const timeslotsByClientType: Record<string, number> = {};
+      timeslots.forEach((ts) => {
+        timeslotsByClientType[ts.clientType] =
+          (timeslotsByClientType[ts.clientType] || 0) + 1;
+      });
+
+      // Get date range of timeslots
+      let earliestDate = new Date();
+      let latestDate = new Date(0);
+
+      timeslots.forEach((ts) => {
+        const startDate = new Date(ts.startTime);
+        const endDate = new Date(ts.endTime);
+
+        if (startDate < earliestDate) earliestDate = startDate;
+        if (endDate > latestDate) latestDate = endDate;
+      });
+
+      res.json({
+        counts: {
+          timeslots: timeslots.length,
+          availableTimeslots,
+          bookings: bookings.length,
+          clientRules: clientRules.length,
+          meetingTypes: meetingTypes.length,
+        },
+        dateRange: {
+          earliest: earliestDate.toISOString(),
+          latest: latestDate.toISOString(),
+        },
+        timeslotsByDate,
+        timeslotsByClientType,
+        sampleTimeslots: timeslots.slice(0, Math.min(5, timeslots.length)),
+        storage: {
+          timeslotsCount: timeslots.length,
+        },
+      });
+    } catch (error) {
+      console.error("Error getting storage stats:", error);
+      res.status(500).json({ error: "Failed to get storage stats" });
     }
   });
 

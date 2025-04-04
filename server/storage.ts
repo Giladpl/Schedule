@@ -111,7 +111,47 @@ export class MemStorage implements IStorage {
 
   // Timeslot methods
   async getTimeslots(): Promise<Timeslot[]> {
-    return Array.from(this.timeslots.values());
+    try {
+      // Ensure timeslots is a Map
+      if (!(this.timeslots instanceof Map)) {
+        console.log(
+          "[Debug] timeslots is not a Map in getTimeslots, re-initializing"
+        );
+        this.timeslots = new Map();
+        return [];
+      }
+
+      const result = Array.from(this.timeslots.values());
+      console.log(
+        `[Debug] getTimeslots: Returning ${result.length} total timeslots`
+      );
+
+      if (result.length > 0) {
+        const available = result.filter((ts) => ts.isAvailable).length;
+        console.log(
+          `[Debug] Available timeslots: ${available} out of ${result.length}`
+        );
+
+        // Log a few sample timeslots
+        const samples = result.slice(0, Math.min(3, result.length));
+        samples.forEach((ts, i) => {
+          console.log(`[Debug] Sample timeslot ${i}:`, {
+            id: ts.id,
+            startTime: new Date(ts.startTime).toISOString(),
+            endTime: new Date(ts.endTime).toISOString(),
+            clientType: ts.clientType,
+            meetingTypes: ts.meetingTypes,
+            isAvailable: ts.isAvailable,
+          });
+        });
+      }
+
+      return result;
+    } catch (error) {
+      console.error("[Debug] Error in getTimeslots:", error);
+      // Return empty array if there's an error
+      return [];
+    }
   }
 
   async getTimeslotsByDate(date: Date): Promise<Timeslot[]> {
