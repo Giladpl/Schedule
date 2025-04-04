@@ -138,7 +138,7 @@ export default function Calendar() {
       });
       setBookingModalOpen(false);
       setConfirmationModalOpen(true);
-      queryClient.invalidateQueries({ queryKey: ["/api/timeslots"] });
+      queryClient.invalidateQueries({ queryKey: ["timeslots"] });
     },
     onError: (error) => {
       toast({
@@ -149,6 +149,24 @@ export default function Calendar() {
       });
     },
   });
+
+  // Add a useEffect to log when timeslots change
+  useEffect(() => {
+    console.log(
+      `[Debug] Timeslots data updated: ${timeslots.length} timeslots found`
+    );
+    if (timeslots.length === 0) {
+      console.log("[Debug] No timeslots returned. Check server response.");
+    }
+  }, [timeslots]);
+
+  // Add another useEffect to manually refetch when necessary
+  useEffect(() => {
+    if (!isSyncing && timeslots.length === 0) {
+      console.log("[Debug] Manually triggering timeslot refetch");
+      refetch();
+    }
+  }, [isSyncing, timeslots.length, refetch]);
 
   // Handle navigation
   const goToNextPeriod = () => {

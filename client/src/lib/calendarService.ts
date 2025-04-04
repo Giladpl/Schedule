@@ -29,18 +29,43 @@ export async function fetchTimeslots(
   url.searchParams.append("start", startDate.toISOString());
   url.searchParams.append("end", endDate.toISOString());
 
-  if (clientType) {
+  if (clientType && clientType !== "all") {
     url.searchParams.append("type", clientType);
   }
 
-  if (meetingType) {
+  if (meetingType && meetingType !== "all") {
     url.searchParams.append("meetingType", meetingType);
   }
 
   console.log(`[Debug] Fetching timeslots: ${url.toString()}`);
+  console.log(
+    `[Debug] Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`
+  );
+  console.log(
+    `[Debug] Filters: clientType=${clientType || "all"}, meetingType=${
+      meetingType || "all"
+    }`
+  );
+
   try {
     const response = await apiRequest<Timeslot[]>("GET", url.toString());
     console.log(`[Debug] Received ${response.length} timeslots`);
+
+    if (response.length === 0) {
+      console.log(
+        `[Debug] Empty timeslots response. Verify server is returning data for this date range.`
+      );
+    } else {
+      console.log(`[Debug] First timeslot: ${JSON.stringify(response[0])}`);
+      console.log(
+        `[Debug] Date range in response: ${new Date(
+          response[0].startTime
+        ).toISOString()} to ${new Date(
+          response[response.length - 1].endTime
+        ).toISOString()}`
+      );
+    }
+
     return response;
   } catch (error) {
     console.error("[Debug] Error fetching timeslots:", error);
