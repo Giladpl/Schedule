@@ -168,7 +168,14 @@ export function TimeSlot({
       <div className="absolute top-1 right-1">
         <span
           className="text-xs px-2 py-0.5 rounded-md font-medium shadow-sm"
-          style={{ backgroundColor: clientTypeColor, color: "white" }}
+          style={{
+            backgroundColor: clientTypeColor,
+            color: "white",
+            fontWeight:
+              activeClientType && activeClientType !== "all"
+                ? "bold"
+                : "medium",
+          }}
         >
           {clientDisplayName}
         </span>

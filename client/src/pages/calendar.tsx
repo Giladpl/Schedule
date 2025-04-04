@@ -478,6 +478,7 @@ export default function Calendar() {
                   onSelectTimeslot={handleSelectTimeslot}
                   selectedDate={currentDate}
                   onSelectDate={handleSelectDate}
+                  clientType={clientType}
                 />
               </div>
             ) : (
