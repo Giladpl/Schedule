@@ -24,7 +24,7 @@ export async function fetchTimeslots(
   clientType?: string,
   meetingType?: string
 ): Promise<Timeslot[]> {
-  // Use a relative URL to leverage the Vite proxy
+  // Use a relative URL to leverage the Vite proxy, but make sure we're hitting the proper backend
   const url = new URL("/api/timeslots", window.location.origin);
   url.searchParams.append("start", startDate.toISOString());
   url.searchParams.append("end", endDate.toISOString());
@@ -37,9 +37,12 @@ export async function fetchTimeslots(
     url.searchParams.append("meetingType", meetingType);
   }
 
-  console.log(`[Debug] Fetching timeslots: ${url.toString()}`);
+  console.log(`[Debug] Calendar making API request to: ${url.toString()}`);
   console.log(
-    `[Debug] Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`
+    `[Debug] Date range ${startDate.toISOString()} to ${endDate.toISOString()} includes Saturday: ${checkDateRangeContainsSaturday(
+      startDate,
+      endDate
+    )}`
   );
   console.log(
     `[Debug] Filters: clientType=${clientType || "all"}, meetingType=${
@@ -49,14 +52,16 @@ export async function fetchTimeslots(
 
   // Check date range for Saturday
   const containsSaturday = checkDateRangeContainsSaturday(startDate, endDate);
-  console.log(`[Debug] Date range contains Saturday: ${containsSaturday}`);
-  if (containsSaturday) {
-    console.log("[Debug] Saturday dates in range:");
-    const saturdayDates = getSaturdaysInRange(startDate, endDate);
-    saturdayDates.forEach((date) => {
-      console.log(`[Debug]   - ${date.toISOString()}`);
-    });
-  }
+  console.log(`[Debug] Saturday dates in range:`);
+  const saturdayDates = getSaturdaysInRange(startDate, endDate);
+  saturdayDates.forEach((date) => {
+    console.log(`[Debug] Saturday: ${date.toISOString()}`);
+  });
+
+  // This ensures we don't include querystring directly in the URL
+  // Make a clean request string using the Vite proxy
+  const backendUrl = `${window.location.origin}/api/timeslots${url.search}`;
+  console.log(`[Debug] Fetching timeslots: ${backendUrl}`);
 
   try {
     // Create an AbortController to timeout the request if it takes too long
@@ -102,6 +107,35 @@ export async function fetchTimeslots(
       console.log(
         "[Debug] No Saturday timeslots were returned despite Saturday being in the date range"
       );
+
+      // WORKAROUND: If we don't get Saturday events but we know they should exist,
+      // make a direct API call to the backend (not through Vite proxy)
+      if (containsSaturday && response.length === 0) {
+        console.log("[Debug] Trying direct backend call for Saturday events");
+
+        try {
+          // Use direct call to backend
+          const directBackendUrl = "http://localhost:3000/api/timeslots";
+          const params = new URLSearchParams();
+          params.append("start", startDate.toISOString());
+          params.append("end", endDate.toISOString());
+
+          const directResponse = await fetch(
+            `${directBackendUrl}?${params.toString()}`
+          );
+          if (directResponse.ok) {
+            const saturdayEvents = await directResponse.json();
+            if (saturdayEvents && saturdayEvents.length > 0) {
+              console.log(
+                `[Debug] Found ${saturdayEvents.length} events directly from backend`
+              );
+              return saturdayEvents;
+            }
+          }
+        } catch (directError) {
+          console.error("[Debug] Direct backend call failed:", directError);
+        }
+      }
     }
 
     if (response.length === 0) {
