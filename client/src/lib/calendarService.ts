@@ -96,8 +96,26 @@ export async function createBooking(
 export async function syncCalendar(): Promise<void> {
   console.log(`[Debug] Syncing calendar with Google`);
   try {
-    await apiRequest<void>("GET", "/api/sync-calendar");
-    console.log(`[Debug] Calendar synced successfully`);
+    const response = await apiRequest<{
+      success: boolean;
+      timeslotCount: number;
+      message?: string;
+    }>("GET", "/api/sync-calendar");
+
+    if (response.success) {
+      console.log(
+        `[Debug] Calendar synced successfully. Timeslots count: ${response.timeslotCount}`
+      );
+    } else {
+      console.error(
+        `[Debug] Calendar sync response indicated failure: ${
+          response.message || "No message provided"
+        }`
+      );
+      throw new Error(
+        `Calendar sync failed: ${response.message || "Unknown error"}`
+      );
+    }
   } catch (error) {
     console.error(`[Debug] Error syncing calendar:`, error);
     throw error;

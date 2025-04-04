@@ -627,55 +627,71 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // API endpoint for calendar sync
   app.get("/api/sync-calendar", async (req, res) => {
-    console.log("[Debug] /api/sync-calendar endpoint hit");
+    console.log("[Debug] Calendar sync endpoint hit");
     try {
-      if (!calendar) {
-        console.log("No calendar client available");
-        return res.status(500).json({
-          error: "Google Calendar client not available",
+      if (!process.env.GOOGLE_CALENDAR_ID) {
+        console.log(
+          "[Debug] No GOOGLE_CALENDAR_ID found in environment variables"
+        );
+        return res.status(400).json({
           success: false,
+          error: "Google Calendar ID not configured",
         });
       }
 
-      console.log("Starting calendar sync...");
-      const result = await syncWithGoogleCalendar(calendar);
-      console.log("Calendar sync completed");
+      const { calendar } = setupGoogleClients();
 
-      // Count timeslots after sync for debugging
-      const timeslots = await storage.getTimeslots();
+      if (!calendar) {
+        console.log("[Debug] Google Calendar client not initialized");
+        return res.status(500).json({
+          success: false,
+          error: "Failed to initialize Google Calendar client",
+        });
+      }
+
+      console.log("[Debug] Starting Google Calendar sync...");
+
+      // Clear existing timeslots before sync
+      const existingTimeslots = await storage.getTimeslots();
       console.log(
-        `[Debug] After sync: total timeslots in storage: ${timeslots.length}`
+        `[Debug] Found ${existingTimeslots.length} existing timeslots before sync`
       );
 
-      // Print date range of available timeslots
-      if (timeslots.length > 0) {
-        const orderedTimeslots = [...timeslots].sort(
-          (a, b) =>
-            new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-        );
+      // Perform the sync
+      await syncWithGoogleCalendar(calendar);
 
-        const firstDate = new Date(orderedTimeslots[0].startTime);
-        const lastDate = new Date(
-          orderedTimeslots[orderedTimeslots.length - 1].endTime
+      // Check results after sync
+      const newTimeslots = await storage.getTimeslots();
+      console.log(
+        `[Debug] After sync: ${newTimeslots.length} timeslots in storage`
+      );
+
+      if (newTimeslots.length > 0) {
+        // Get date range of available timeslots for debugging
+        const startTimes = newTimeslots.map((ts) =>
+          new Date(ts.startTime).getTime()
         );
+        const earliestTime = new Date(Math.min(...startTimes));
+        const latestTime = new Date(Math.max(...startTimes));
 
         console.log(
-          `[Debug] Timeslots available from ${firstDate.toISOString()} to ${lastDate.toISOString()}`
+          `[Debug] Available timeslots from ${earliestTime.toISOString()} to ${latestTime.toISOString()}`
         );
       }
 
-      return res.json({
-        message: "Calendar synchronized successfully",
+      res.json({
         success: true,
-        timeslotsCount: timeslots.length,
+        message: "Calendar synced successfully",
+        timeslotCount: newTimeslots.length,
       });
     } catch (error) {
-      console.error("Error syncing calendar:", error);
-      return res.status(500).json({
-        error: "Failed to sync calendar",
-        details: error instanceof Error ? error.message : String(error),
+      console.error("[Debug] Error syncing calendar:", error);
+      res.status(500).json({
         success: false,
+        error: "Failed to sync calendar",
+        message: error instanceof Error ? error.message : "Unknown error",
       });
     }
   });
