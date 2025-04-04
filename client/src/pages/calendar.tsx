@@ -436,6 +436,15 @@ export default function Calendar() {
     setMeetingType(value);
   };
 
+  // Add handler for toggling between admin and client views
+  const handleViewModeToggle = () => {
+    if (isAdmin) {
+      navigate("/calendar");
+    } else {
+      navigate("/admin");
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <CalendarHeader
@@ -448,6 +457,7 @@ export default function Calendar() {
         onViewChange={setView}
         isPreviousDisabled={isPreviousDisabled()}
         isAdmin={isAdmin}
+        onViewModeToggle={handleViewModeToggle}
       />
 
       <main className="flex-1 flex overflow-hidden h-full">

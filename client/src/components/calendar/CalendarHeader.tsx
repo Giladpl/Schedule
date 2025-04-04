@@ -11,6 +11,7 @@ interface CalendarHeaderProps {
   onViewChange: (view: "week" | "month") => void;
   isPreviousDisabled?: boolean;
   isAdmin?: boolean;
+  onViewModeToggle?: () => void;
 }
 
 export default function CalendarHeader({
@@ -23,6 +24,7 @@ export default function CalendarHeader({
   onViewChange,
   isPreviousDisabled = false,
   isAdmin = false,
+  onViewModeToggle,
 }: CalendarHeaderProps) {
   return (
     <header className="border-b border-[#dadce0] py-4 px-6 flex justify-between items-center sticky top-0 bg-white z-10">
@@ -171,6 +173,21 @@ export default function CalendarHeader({
               <path d="M12 8h.01" />
             </svg>
           </Button>
+
+          {/* Admin Toggle Button - Only visible for admins */}
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onViewModeToggle}
+              className="text-sm text-[#1a73e8] border-[#dadce0] hover:bg-[#f1f3f4] px-3"
+            >
+              {window.location.pathname === "/admin"
+                ? "Client View"
+                : "Admin View"}
+            </Button>
+          )}
+
           <Button
             variant="ghost"
             size="icon"
