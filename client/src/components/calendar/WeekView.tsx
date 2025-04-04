@@ -43,6 +43,7 @@ interface WeekViewProps {
   onSelectTimeslot: (timeslot: Timeslot) => void;
   selectedDate: Date | null;
   onSelectDate?: (date: Date) => void; // Add optional onSelectDate prop
+  clientType?: string; // Add clientType prop
 }
 
 // Simple info component instead of full legend
@@ -125,12 +126,14 @@ function ExpandableTimeslots({
   top,
   height,
   onSelectTimeslot,
+  activeClientType,
 }: {
   slots: Timeslot[];
   timeKey: string;
   top: number;
   height: number;
   onSelectTimeslot: (timeslot: Timeslot) => void;
+  activeClientType?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -164,12 +167,16 @@ function ExpandableTimeslots({
   // Collect all unique client types
   const clientTypes = Array.from(new Set(slots.map((slot) => slot.clientType)));
 
-  // Get client display names
-  const clientDisplayNames = clientTypes.map((type) => ({
-    type,
-    displayName: getClientTypeDisplayName(type),
-    color: CLIENT_TYPE_COLORS[type] || stringToColor(type),
-  }));
+  // Determine the effective client type to display (either the filtered type or the slot's type)
+  const displayClientType =
+    activeClientType && activeClientType !== "all"
+      ? activeClientType
+      : clientTypes[0] || "all";
+
+  // Get client display name
+  const clientDisplayName = getClientTypeDisplayName(displayClientType);
+  const clientColor =
+    CLIENT_TYPE_COLORS[displayClientType] || stringToColor(displayClientType);
 
   // Collect all unique meeting types
   const meetingTypes = Array.from(
@@ -226,15 +233,18 @@ function ExpandableTimeslots({
             </div>
 
             {/* Client types */}
-            {clientDisplayNames.length > 0 && (
+            {clientTypes.length > 0 && (
               <div className="flex flex-wrap justify-center gap-1 mb-2">
-                {clientDisplayNames.map((client, idx) => (
+                {clientTypes.map((type, idx) => (
                   <span
                     key={idx}
                     className="text-[10px] px-1.5 py-0.5 rounded-md text-white font-medium"
-                    style={{ backgroundColor: client.color }}
+                    style={{
+                      backgroundColor:
+                        CLIENT_TYPE_COLORS[type] || stringToColor(type),
+                    }}
                   >
-                    {client.displayName}
+                    {getClientTypeDisplayName(type)}
                   </span>
                 ))}
               </div>
@@ -294,6 +304,7 @@ function ExpandableTimeslots({
                     onSelectTimeslot(timeslot);
                     setExpanded(false);
                   }}
+                  activeClientType={activeClientType}
                 />
               </div>
             ))}
@@ -304,12 +315,399 @@ function ExpandableTimeslots({
   );
 }
 
+// Component for a day's schedule
+function DaySchedule({
+  day,
+  timeslots,
+  onSelectTimeslot,
+  selectedDate,
+  onSelectDate,
+  clientType,
+}: {
+  day: Date;
+  timeslots: Timeslot[];
+  onSelectTimeslot: (timeslot: Timeslot) => void;
+  selectedDate: Date | null;
+  onSelectDate?: (date: Date) => void;
+  clientType?: string;
+}) {
+  const { width } = useWindowSize();
+  const isMobile = width < 768; // Mobile breakpoint
+  const isSmallScreen = width < 1024; // Small screen breakpoint
+
+  const hours = useMemo(() => {
+    return Array.from({ length: 17 }, (_, i) => i + 6); // 6 AM to 10 PM (extended from 8 PM)
+  }, []);
+
+  const today = getNowInIsrael();
+
+  // Track if we have any Saturday in the weekDays
+  const hasSaturday = day.getDay() === 6;
+  console.log(`[Debug WeekView] Week view contains Saturday: ${hasSaturday}`);
+
+  // Check if there are any Saturday timeslots in the provided timeslots
+  const saturdayTimeslots = timeslots.filter((slot) => {
+    const date = new Date(slot.startTime);
+    return date.getDay() === 6;
+  });
+
+  console.log(
+    `[Debug WeekView] Week has ${saturdayTimeslots.length} Saturday timeslots`
+  );
+
+  // For each day, check what timeslots are assigned to it
+  const dayTimeslots = timeslots.filter((slot) => {
+    const slotDate = new Date(slot.startTime);
+    return (
+      slotDate.getDate() === day.getDate() &&
+      slotDate.getMonth() === day.getMonth() &&
+      slotDate.getFullYear() === day.getFullYear()
+    );
+  });
+
+  if (isMobile) {
+    // For mobile, default to today or selectedDate if provided
+    const [activeDate, setActiveDate] = useState<Date>(selectedDate || today);
+
+    // When selected date changes from parent, update our internal state
+    useEffect(() => {
+      if (selectedDate) {
+        setActiveDate(selectedDate);
+      }
+    }, [selectedDate]);
+
+    // Handle date selection in mobile view
+    const handleDateSelect = (date: Date) => {
+      setActiveDate(date);
+      if (onSelectDate) {
+        onSelectDate(date);
+      }
+    };
+
+    return (
+      <div className="flex-1 flex flex-col overflow-auto">
+        <CalendarInfo />
+
+        {/* Single day view for mobile */}
+        <div className="flex overflow-x-auto hide-scrollbar py-2">
+          {dayTimeslots.map((slot, index) => (
+            <div
+              key={index}
+              className={`flex-shrink-0 px-3 py-2 mx-1 rounded-full cursor-pointer ${
+                isSameDay(day, activeDate)
+                  ? "bg-blue-500 text-white"
+                  : "bg-gray-100"
+              }`}
+              onClick={() => handleDateSelect(day)}
+            >
+              <div className="text-center">
+                <div className="text-xs font-medium">{getDayName(day)}</div>
+                <div className="text-lg font-bold">{getDayOfMonth(day)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Timeline for selected day */}
+        <div className="mt-4 px-2">
+          <h2 className="text-lg font-bold mb-2">
+            {`${getDayName(activeDate)} ${getDayOfMonth(activeDate)}`}
+          </h2>
+
+          <div className="relative">
+            {hours.map((hour, index) => (
+              <div key={index} className="flex border-t border-gray-200 py-1">
+                <div className="w-16 text-xs text-gray-500 py-2">
+                  {`${hour}:00`}
+                </div>
+                <div className="flex-1 min-h-8"></div>
+              </div>
+            ))}
+
+            {/* Render timeslots for the selected day */}
+            {(() => {
+              const dateStr = activeDate.toISOString().split("T")[0];
+              const dayTimeslots = timeslots.filter((slot) => {
+                const slotDate = new Date(slot.startTime)
+                  .toISOString()
+                  .split("T")[0];
+                return slotDate === dateStr;
+              });
+
+              // Group by exact start/end times
+              const groupedByTime: Record<string, Timeslot[]> = {};
+              dayTimeslots.forEach((slot) => {
+                const key = `${slot.startTime}_${slot.endTime}`;
+                if (!groupedByTime[key]) {
+                  groupedByTime[key] = [];
+                }
+                groupedByTime[key].push(slot);
+              });
+
+              return Object.entries(groupedByTime).map(
+                ([timeKey, slots], groupIdx) => {
+                  const firstSlot = slots[0];
+                  const startTime = new Date(firstSlot.startTime);
+                  const endTime = new Date(firstSlot.endTime);
+                  const startHour =
+                    startTime.getHours() + startTime.getMinutes() / 60;
+                  const endHour =
+                    endTime.getHours() + endTime.getMinutes() / 60;
+                  const top = (startHour - 6) * 64;
+                  const height = (endHour - startHour) * 64;
+
+                  if (startHour >= 23 || endHour <= 6) return null;
+
+                  if (slots.length > 1) {
+                    return (
+                      <ExpandableTimeslots
+                        key={timeKey}
+                        slots={slots}
+                        timeKey={timeKey}
+                        top={top}
+                        height={height}
+                        onSelectTimeslot={onSelectTimeslot}
+                        activeClientType={clientType}
+                      />
+                    );
+                  } else {
+                    return (
+                      <div
+                        key={timeKey}
+                        style={{
+                          position: "absolute",
+                          top: `${top}px`,
+                          left: "18px",
+                          right: "2px",
+                          height: `${height}px`,
+                          zIndex: 10,
+                        }}
+                      >
+                        <TimeSlot
+                          timeslot={firstSlot}
+                          onClick={() => onSelectTimeslot(firstSlot)}
+                          activeClientType={clientType}
+                        />
+                      </div>
+                    );
+                  }
+                }
+              );
+            })()}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // DESKTOP VIEW with responsive adjustments
+  return (
+    <div className="flex-1 flex flex-col overflow-auto">
+      {/* Info section */}
+      <CalendarInfo />
+
+      <div className="flex border-b border-[#dadce0]">
+        <div className="w-16 flex-shrink-0"></div>
+        <div
+          className={`flex-1 text-center py-3 calendar-column ${
+            isSameDay(day, today) ? "bg-[#e8f0fe]" : ""
+          }`}
+        >
+          <div
+            className={`text-sm font-medium ${
+              isSameDay(day, today) ? "text-[#1a73e8]" : "text-[#5f6368]"
+            }`}
+          >
+            {getDayName(day)}
+          </div>
+          <div
+            className={`font-google-sans text-xl mt-1 ${
+              isSameDay(day, today)
+                ? "text-[#1a73e8] bg-[#1a73e8] bg-opacity-10 rounded-full w-10 h-10 flex items-center justify-center mx-auto"
+                : ""
+            }`}
+          >
+            {getDayOfMonth(day)}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-1 relative">
+        <div className="w-16 flex-shrink-0 border-r border-[#dadce0]">
+          {hours.map((hour, index) => (
+            <div
+              key={index}
+              className="h-16 text-right pr-2 text-xs text-[#5f6368] relative -top-2"
+            >
+              {`${hour}:00`}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex-1 flex">
+          {dayTimeslots.map((slot, dayIndex) => {
+            const dateStr = day.toISOString().split("T")[0];
+            const dayHourlySlots = timeslots.filter((slot) => {
+              const slotDate = new Date(slot.startTime)
+                .toISOString()
+                .split("T")[0];
+              return slotDate === dateStr;
+            });
+
+            return (
+              <div
+                key={dayIndex}
+                className="flex-1 border-r border-[#dadce0] relative calendar-column"
+              >
+                {/* Horizontal grid lines */}
+                {hours.map((hour, index) => (
+                  <div
+                    key={index}
+                    className="h-16 border-t border-[#dadce0]"
+                  ></div>
+                ))}
+
+                {/* Render timeslots */}
+                {(() => {
+                  // Group timeslots by their exact start/end times
+                  const groupedByTime: Record<string, Timeslot[]> = {};
+                  dayHourlySlots.forEach((slot) => {
+                    const key = `${slot.startTime}_${slot.endTime}`;
+                    if (!groupedByTime[key]) {
+                      groupedByTime[key] = [];
+                    }
+                    groupedByTime[key].push(slot);
+                  });
+
+                  // Render each group
+                  return Object.entries(groupedByTime).map(
+                    ([timeKey, slots], groupIdx) => {
+                      // Use the first slot for position calculations
+                      const firstSlot = slots[0];
+                      const startTime = new Date(firstSlot.startTime);
+                      const endTime = new Date(firstSlot.endTime);
+                      const startHour =
+                        startTime.getHours() + startTime.getMinutes() / 60;
+                      const endHour =
+                        endTime.getHours() + endTime.getMinutes() / 60;
+                      const top = (startHour - 6) * 64;
+                      const height = (endHour - startHour) * 64;
+
+                      // Only render if the slot falls within our visible hours
+                      if (startHour >= 23 || endHour <= 6) return null;
+
+                      // For small screens, use the expandable component when multiple slots
+                      if (slots.length > 1 && isSmallScreen) {
+                        return (
+                          <ExpandableTimeslots
+                            key={timeKey}
+                            slots={slots}
+                            timeKey={timeKey}
+                            top={top}
+                            height={height}
+                            onSelectTimeslot={onSelectTimeslot}
+                            activeClientType={clientType}
+                          />
+                        );
+                      }
+
+                      // For larger screens or single slots, show in grid
+                      if (slots.length > 1) {
+                        const MAX_VISIBLE_SLOTS = 3; // Maximum number of slots to show side by side
+                        const showExpandable = slots.length > MAX_VISIBLE_SLOTS;
+
+                        // If we have too many options, use the expandable view even on large screens
+                        if (showExpandable) {
+                          return (
+                            <ExpandableTimeslots
+                              key={timeKey}
+                              slots={slots}
+                              timeKey={timeKey}
+                              top={top}
+                              height={height}
+                              onSelectTimeslot={onSelectTimeslot}
+                              activeClientType={clientType}
+                            />
+                          );
+                        }
+
+                        // Otherwise, display side by side (up to MAX_VISIBLE_SLOTS)
+                        return (
+                          <div
+                            key={timeKey}
+                            style={{
+                              position: "absolute",
+                              top: `${top}px`,
+                              left: "2px",
+                              right: "2px",
+                              height: `${height}px`,
+                              zIndex: 10,
+                              display: "flex",
+                              gap: "4px",
+                            }}
+                          >
+                            {slots.map((timeslot, slotIdx) => (
+                              <div
+                                key={`${timeKey}_${slotIdx}`}
+                                className="flex-1 border border-gray-200 rounded-lg shadow-sm"
+                                style={{
+                                  backgroundColor:
+                                    slotIdx % 2 === 0
+                                      ? "rgba(249, 250, 251, 0.5)"
+                                      : "white",
+                                }}
+                              >
+                                <TimeSlot
+                                  timeslot={timeslot}
+                                  onClick={() => onSelectTimeslot(timeslot)}
+                                  className="h-full"
+                                  activeClientType={clientType}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      } else {
+                        // Single option, render normally
+                        return (
+                          <div
+                            key={timeKey}
+                            style={{
+                              position: "absolute",
+                              top: `${top}px`,
+                              left: "2px",
+                              right: "2px",
+                              height: `${height}px`,
+                              zIndex: 10,
+                            }}
+                          >
+                            <TimeSlot
+                              timeslot={firstSlot}
+                              onClick={() => onSelectTimeslot(firstSlot)}
+                              activeClientType={clientType}
+                            />
+                          </div>
+                        );
+                      }
+                    }
+                  );
+                })()}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function WeekView({
   weekDays,
   timeslots,
   onSelectTimeslot,
   selectedDate,
   onSelectDate,
+  clientType,
 }: WeekViewProps) {
   const { width } = useWindowSize();
   const isMobile = width < 768; // Mobile breakpoint
@@ -529,6 +927,7 @@ export function WeekView({
                         top={top}
                         height={height}
                         onSelectTimeslot={onSelectTimeslot}
+                        activeClientType={clientType}
                       />
                     );
                   } else {
@@ -547,6 +946,7 @@ export function WeekView({
                         <TimeSlot
                           timeslot={firstSlot}
                           onClick={() => onSelectTimeslot(firstSlot)}
+                          activeClientType={clientType}
                         />
                       </div>
                     );
@@ -562,203 +962,19 @@ export function WeekView({
 
   // DESKTOP VIEW with responsive adjustments
   return (
-    <div className="flex-1 flex flex-col overflow-auto">
-      {/* Info section */}
-      <CalendarInfo />
-
-      <div className="flex border-b border-[#dadce0]">
-        <div className="w-16 flex-shrink-0"></div>
-        {weekDays.map((day, index) => (
-          <div
-            key={index}
-            className={`flex-1 text-center py-3 calendar-column ${
-              isSameDay(day, today) ? "bg-[#e8f0fe]" : ""
-            }`}
-          >
-            <div
-              className={`text-sm font-medium ${
-                isSameDay(day, today) ? "text-[#1a73e8]" : "text-[#5f6368]"
-              }`}
-            >
-              {getDayName(day)}
-            </div>
-            <div
-              className={`font-google-sans text-xl mt-1 ${
-                isSameDay(day, today)
-                  ? "text-[#1a73e8] bg-[#1a73e8] bg-opacity-10 rounded-full w-10 h-10 flex items-center justify-center mx-auto"
-                  : ""
-              }`}
-            >
-              {getDayOfMonth(day)}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex flex-1 relative">
-        <div className="w-16 flex-shrink-0 border-r border-[#dadce0]">
-          {hours.map((hour, index) => (
-            <div
-              key={index}
-              className="h-16 text-right pr-2 text-xs text-[#5f6368] relative -top-2"
-            >
-              {`${hour}:00`}
-            </div>
-          ))}
+    <div className="w-full flex overflow-hidden">
+      {weekDays.map((day, index) => (
+        <div key={index} className="flex-1 min-w-0 min-h-0 overflow-hidden">
+          <DaySchedule
+            day={day}
+            timeslots={timeslots}
+            onSelectTimeslot={onSelectTimeslot}
+            selectedDate={selectedDate}
+            onSelectDate={onSelectDate}
+            clientType={clientType}
+          />
         </div>
-
-        <div className="flex-1 flex">
-          {weekDays.map((day, dayIndex) => {
-            const dateStr = day.toISOString().split("T")[0];
-            const dayHourlySlots = timeslotsByDay[dateStr] || {};
-
-            return (
-              <div
-                key={dayIndex}
-                className="flex-1 border-r border-[#dadce0] relative calendar-column"
-              >
-                {/* Horizontal grid lines */}
-                {hours.map((hour, index) => (
-                  <div
-                    key={index}
-                    className="h-16 border-t border-[#dadce0]"
-                  ></div>
-                ))}
-
-                {/* Render timeslots */}
-                {(() => {
-                  // Filter timeslots for this day
-                  const dayTimeslots = timeslots.filter((slot) => {
-                    const slotDate = new Date(slot.startTime)
-                      .toISOString()
-                      .split("T")[0];
-                    return slotDate === dateStr;
-                  });
-
-                  // Group timeslots by their exact start/end times
-                  const groupedByTime: Record<string, Timeslot[]> = {};
-                  dayTimeslots.forEach((slot) => {
-                    const key = `${slot.startTime}_${slot.endTime}`;
-                    if (!groupedByTime[key]) {
-                      groupedByTime[key] = [];
-                    }
-                    groupedByTime[key].push(slot);
-                  });
-
-                  // Render each group
-                  return Object.entries(groupedByTime).map(
-                    ([timeKey, slots], groupIdx) => {
-                      // Use the first slot for position calculations
-                      const firstSlot = slots[0];
-                      const startTime = new Date(firstSlot.startTime);
-                      const endTime = new Date(firstSlot.endTime);
-                      const startHour =
-                        startTime.getHours() + startTime.getMinutes() / 60;
-                      const endHour =
-                        endTime.getHours() + endTime.getMinutes() / 60;
-                      const top = (startHour - 6) * 64;
-                      const height = (endHour - startHour) * 64;
-
-                      // Only render if the slot falls within our visible hours
-                      if (startHour >= 23 || endHour <= 6) return null;
-
-                      // For small screens, use the expandable component when multiple slots
-                      if (slots.length > 1 && isSmallScreen) {
-                        return (
-                          <ExpandableTimeslots
-                            key={timeKey}
-                            slots={slots}
-                            timeKey={timeKey}
-                            top={top}
-                            height={height}
-                            onSelectTimeslot={onSelectTimeslot}
-                          />
-                        );
-                      }
-
-                      // For larger screens or single slots, show in grid
-                      if (slots.length > 1) {
-                        const MAX_VISIBLE_SLOTS = 3; // Maximum number of slots to show side by side
-                        const showExpandable = slots.length > MAX_VISIBLE_SLOTS;
-
-                        // If we have too many options, use the expandable view even on large screens
-                        if (showExpandable) {
-                          return (
-                            <ExpandableTimeslots
-                              key={timeKey}
-                              slots={slots}
-                              timeKey={timeKey}
-                              top={top}
-                              height={height}
-                              onSelectTimeslot={onSelectTimeslot}
-                            />
-                          );
-                        }
-
-                        // Otherwise, display side by side (up to MAX_VISIBLE_SLOTS)
-                        return (
-                          <div
-                            key={timeKey}
-                            style={{
-                              position: "absolute",
-                              top: `${top}px`,
-                              left: "2px",
-                              right: "2px",
-                              height: `${height}px`,
-                              zIndex: 10,
-                              display: "flex",
-                              gap: "4px",
-                            }}
-                          >
-                            {slots.map((timeslot, slotIdx) => (
-                              <div
-                                key={`${timeKey}_${slotIdx}`}
-                                className="flex-1 border border-gray-200 rounded-lg shadow-sm"
-                                style={{
-                                  backgroundColor:
-                                    slotIdx % 2 === 0
-                                      ? "rgba(249, 250, 251, 0.5)"
-                                      : "white",
-                                }}
-                              >
-                                <TimeSlot
-                                  timeslot={timeslot}
-                                  onClick={() => onSelectTimeslot(timeslot)}
-                                  className="h-full"
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      } else {
-                        // Single option, render normally
-                        return (
-                          <div
-                            key={timeKey}
-                            style={{
-                              position: "absolute",
-                              top: `${top}px`,
-                              left: "2px",
-                              right: "2px",
-                              height: `${height}px`,
-                              zIndex: 10,
-                            }}
-                          >
-                            <TimeSlot
-                              timeslot={firstSlot}
-                              onClick={() => onSelectTimeslot(firstSlot)}
-                            />
-                          </div>
-                        );
-                      }
-                    }
-                  );
-                })()}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      ))}
     </div>
   );
 }

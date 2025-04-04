@@ -251,8 +251,8 @@ export default function Sidebar({
                 </span>
               </div>
 
-              {/* Show first 3 clients from the loaded data */}
-              {clientData.clients.slice(0, 3).map((client, idx) => {
+              {/* Show first 3 client types from the loaded data */}
+              {clientData.clients.slice(0, 5).map((client, idx) => {
                 // Generate color dynamically using the same function as TimeSlot
                 const color =
                   CLIENT_TYPE_COLORS[client.type] || stringToColor(client.type);

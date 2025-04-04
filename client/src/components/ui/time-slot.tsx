@@ -6,28 +6,28 @@ import React, { useMemo } from "react";
 
 // פונקציה ליצירת צבע עקבי מחרוזת (hash-based)
 export function stringToColor(str: string): string {
-  // רשימת צבעים בסיסיים ברורים עם ניגודיות גבוהה
+  // רשימת צבעים בסיסיים עם ניגודיות גבוהה מאוד - צבעים חדים ושונים זה מזה
   const baseColors = [
-    "#1a73e8", // כחול Google
+    "#1a73e8", // כחול Google כהה
     "#ea4335", // אדום Google
     "#34a853", // ירוק Google
     "#fbbc04", // צהוב Google
     "#9c27b0", // סגול עמוק
-    "#00bcd4", // ציאן
-    "#ff9800", // כתום
-    "#e91e63", // ורוד עמוק
-    "#3f51b5", // אינדיגו
-    "#4caf50", // ירוק בהיר
-    "#f44336", // אדום חזק
-    "#2196f3", // כחול בהיר
-    "#ff5722", // כתום עמוק
-    "#607d8b", // כחול-אפור
-    "#673ab7", // סגול
-    "#795548", // חום
-    "#009688", // טורקיז
-    "#8bc34a", // ירוק-ליים
-    "#ffc107", // ענבר
-    "#03a9f4", // כחול בהיר
+    "#00bcd4", // טורקיז בהיר
+    "#ff6d01", // כתום בוהק
+    "#d81b60", // ורוד עמוק/פוקסיה
+    "#3949ab", // אינדיגו כהה
+    "#2e7d32", // ירוק יער
+    "#c62828", // אדום חזק
+    "#0277bd", // כחול בינוני
+    "#f57c00", // כתום אש
+    "#455a64", // כחול-אפור כהה
+    "#6a1b9a", // סגול חזק
+    "#4e342e", // חום כהה
+    "#00695c", // טורקיז כהה
+    "#558b2f", // ירוק זית
+    "#ef6c00", // כתום חום
+    "#0097a7", // ציאן כהה
   ];
 
   // יצירת hash מהמחרוזת
@@ -37,17 +37,20 @@ export function stringToColor(str: string): string {
     hash |= 0; // המרה ל-32bit integer
   }
 
-  // בחירת צבע מרשימת הצבעים הקבועה
-  if (Math.abs(hash) % 3 !== 0 || baseColors.length === 0) {
-    // שימוש בשיטת הצבעים הקבועים (2/3 מהמקרים)
+  // בחירת צבע מרשימת הצבעים הקבועה או יצירת צבע אקראי מאוד מובחן
+  if (Math.abs(hash) % 4 !== 0 || baseColors.length === 0) {
+    // שימוש בשיטת הצבעים הקבועים (3/4 מהמקרים)
     const index = Math.abs(hash) % baseColors.length;
     return baseColors[index];
   } else {
-    // יצירת צבע אקראי עם ערכי בהירות וריווי גבוהים (1/3 מהמקרים)
-    // בפורמט HSL כדי להבטיח צבעים חיים וברורים
-    const hue = Math.abs(hash) % 360; // גוון אקראי מלא (0-359)
-    const saturation = 65 + (Math.abs(hash) % 20); // ריווי גבוה (65%-85%)
-    const lightness = 45 + (Math.abs(hash >> 8) % 10); // בהירות מאוזנת (45%-55%)
+    // יצירת צבע אקראי עם ערכי בהירות וריווי גבוהים (1/4 מהמקרים)
+    // בחירת גוון שאינו קרוב לגוונים אחרים בסט הקבוע
+    const hueOffset = (Math.abs(hash) % 12) * 30; // קפיצות של 30 מעלות לגוונים מובחנים
+    const hue = hueOffset; // 0-360
+
+    // שימוש בריווי ובהירות שיוצרים צבעים חזקים וברורים
+    const saturation = 85 + (Math.abs(hash) % 15); // ריווי גבוה (85%-100%)
+    const lightness = 40 + (Math.abs(hash >> 6) % 15); // בהירות מאוזנת (40%-55%)
 
     return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
   }
@@ -80,21 +83,37 @@ export const MEETING_TYPE_STYLES: Record<
 interface TimeSlotProps extends React.HTMLAttributes<HTMLDivElement> {
   timeslot: Timeslot;
   onClick?: () => void;
+  activeClientType?: string; // Add prop for currently filtered client type
 }
 
 export function TimeSlot({
   timeslot,
   onClick,
   className,
+  activeClientType,
   ...props
 }: TimeSlotProps) {
   // בחירת צבע לסוג לקוח - אם לא קיים, צור באופן דינמי
   const clientTypeColor = useMemo(() => {
+    // If we're filtering by a specific client type, use that instead of the slot's type
+    const effectiveClientType =
+      activeClientType && activeClientType !== "all"
+        ? activeClientType
+        : timeslot.clientType;
     return (
-      CLIENT_TYPE_COLORS[timeslot.clientType] ||
-      stringToColor(timeslot.clientType)
+      CLIENT_TYPE_COLORS[effectiveClientType] ||
+      stringToColor(effectiveClientType)
     );
-  }, [timeslot.clientType]);
+  }, [timeslot.clientType, activeClientType]);
+
+  // Get client display name - respect the currently filtered client type
+  const clientDisplayName = useMemo(() => {
+    const effectiveClientType =
+      activeClientType && activeClientType !== "all"
+        ? activeClientType
+        : timeslot.clientType;
+    return getClientTypeDisplayName(effectiveClientType);
+  }, [timeslot.clientType, activeClientType]);
 
   const isAvailable = timeslot.isAvailable;
 
@@ -130,9 +149,6 @@ export function TimeSlot({
     .split(",")
     .map((type) => type.trim())
     .filter(Boolean);
-
-  // Get client display name
-  const clientDisplayName = getClientTypeDisplayName(timeslot.clientType);
 
   return (
     <div
