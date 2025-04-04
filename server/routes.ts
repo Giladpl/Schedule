@@ -627,46 +627,50 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Function to check if any events exist in the specified date range
+  // Helper function to check for events in Google Calendar
   async function checkForEvents(
     calendar: calendar_v3.Calendar,
     days: number = 60
   ): Promise<boolean> {
     try {
+      if (!process.env.GOOGLE_CALENDAR_ID) {
+        console.error("Google Calendar ID not found in environment variables");
+        return false;
+      }
+
+      // Calculate start and end dates
       const now = new Date();
+      const startDate = now.toISOString();
       const endDate = new Date(now);
       endDate.setDate(now.getDate() + days);
 
+      console.log(`[Debug] Checking for events in the next ${days} days`);
       console.log(
-        `[Debug] Checking for events from ${now.toISOString()} to ${endDate.toISOString()}`
+        `[Debug] Date range: ${startDate} to ${endDate.toISOString()}`
       );
 
+      // Query Google Calendar with minimal fields to improve performance
       const response = await calendar.events.list({
-        calendarId: process.env.GOOGLE_CALENDAR_ID!,
-        timeMin: now.toISOString(),
+        calendarId: process.env.GOOGLE_CALENDAR_ID,
+        timeMin: startDate,
         timeMax: endDate.toISOString(),
-        maxResults: 5, // Just need to know if any exist
         singleEvents: true,
+        orderBy: "startTime",
+        maxResults: 10, // We only need to know if any events exist
+        fields: "items(id,summary)", // Request minimal fields
       });
 
-      const hasEvents = response.data.items && response.data.items.length > 0;
-      console.log(
-        `[Debug] Found ${
-          response.data.items?.length || 0
-        } events in the next ${days} days`
+      // Make sure we have a boolean result
+      const hasEvents = Boolean(
+        response.data.items && response.data.items.length > 0
       );
-
-      if (!hasEvents) {
-        console.log(
-          "[Debug] No events found in calendar for the specified period"
-        );
-      } else {
-        console.log("[Debug] Example event:", response.data.items![0].summary);
-      }
+      console.log(
+        `[Debug] Found ${response.data.items?.length || 0} events in calendar`
+      );
 
       return hasEvents;
     } catch (error) {
-      console.error("[Debug] Error checking for events:", error);
+      console.error("Error checking for events:", error);
       return false;
     }
   }
@@ -721,6 +725,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       console.log(
         `[Debug] Found ${existingTimeslots.length} existing timeslots before sync`
       );
+
+      // Clear existing timeslots
+      await storage.clearTimeslots();
 
       // Perform the sync
       await syncWithGoogleCalendar(calendar);
@@ -1650,9 +1657,3 @@ function extractMeetingTypes(event: calendar_v3.Schema$Event): string {
     .filter((value, index, self) => self.indexOf(value) === index)
     .join(",");
 }
-
-// Add clearTimeslots method to storage
-storage.clearTimeslots = async function (): Promise<void> {
-  console.log("[Debug] Clearing all timeslots from storage");
-  this.timeslots = [];
-};
