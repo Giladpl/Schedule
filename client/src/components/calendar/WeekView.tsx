@@ -336,6 +336,48 @@ export function WeekView({
           dayTimeslots.length
         } timeslots`
       );
+
+      if (dayTimeslots.length > 0) {
+        console.log(`[Debug WeekView] Saturday timeslots:`);
+        dayTimeslots.forEach((slot, i) => {
+          console.log(
+            `[Debug WeekView]   ${i + 1}. ${new Date(
+              slot.startTime
+            ).toISOString()} - ` +
+              `${new Date(slot.endTime).toISOString()}, ` +
+              `isAvailable: ${slot.isAvailable}, id: ${slot.id}`
+          );
+        });
+      } else {
+        console.log(`[Debug WeekView] No timeslots for this Saturday!`);
+
+        // Check for any timeslots on this day regardless of availability
+        const allSlotsForDay = timeslots.filter((slot) => {
+          const slotDate = new Date(slot.startTime);
+          return (
+            slotDate.getDate() === day.getDate() &&
+            slotDate.getMonth() === day.getMonth() &&
+            slotDate.getFullYear() === day.getFullYear() &&
+            slotDate.getDay() === 6 // Additional check for Saturday
+          );
+        });
+
+        if (allSlotsForDay.length > 0) {
+          console.log(
+            `[Debug WeekView] Found ${allSlotsForDay.length} Saturday timeslots that might be filtered by availability`
+          );
+
+          // Check which ones are not available
+          const unavailableSlots = allSlotsForDay.filter(
+            (slot) => !slot.isAvailable
+          );
+          if (unavailableSlots.length > 0) {
+            console.log(
+              `[Debug WeekView] ${unavailableSlots.length} are marked as unavailable`
+            );
+          }
+        }
+      }
     }
   });
 

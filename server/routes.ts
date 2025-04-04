@@ -1207,6 +1207,7 @@ async function syncWithGoogleCalendar(
       timeMax: threeMonthsLater.toISOString(),
       singleEvents: true,
       orderBy: "startTime",
+      maxResults: 2500, // Ensure we get all events
     });
 
     const events = response.data.items || [];
@@ -1214,7 +1215,7 @@ async function syncWithGoogleCalendar(
       `[Debug] Retrieved ${events.length} events from Google Calendar`
     );
 
-    // Add debug for events on Saturday
+    // Add better debug for events on Saturday
     const saturdayEvents = events.filter((event) => {
       if (!event.start?.dateTime) return false;
       const eventDate = new Date(event.start.dateTime);
@@ -1222,21 +1223,41 @@ async function syncWithGoogleCalendar(
       return eventDate.getDay() === 6;
     });
 
-    console.log(`[Debug] Found ${saturdayEvents.length} Saturday events`);
+    console.log(
+      `[Debug] Found ${saturdayEvents.length} Saturday events in Google Calendar`
+    );
 
     // Log details of Saturday events
     if (saturdayEvents.length > 0) {
       saturdayEvents.forEach((event, index) => {
         console.log(`[Debug] Saturday event #${index + 1}: ${event.summary}`);
         console.log(
-          `  Date: ${new Date(event.start!.dateTime!).toISOString()}`
+          `  Start: ${new Date(event.start!.dateTime!).toISOString()}`
         );
+        console.log(`  End: ${new Date(event.end!.dateTime!).toISOString()}`);
         console.log(`  Description: ${event.description || "No description"}`);
+        console.log(
+          `  Day of week: ${new Date(event.start!.dateTime!).getDay()}`
+        );
       });
+    } else {
+      console.log("[Debug] No Saturday events found in Google Calendar");
     }
+
+    // Log events by day of week for distribution analysis
+    const eventsByDayOfWeek = new Array(7).fill(0);
+    events.forEach((event) => {
+      if (event.start?.dateTime) {
+        const dayOfWeek = new Date(event.start.dateTime).getDay();
+        eventsByDayOfWeek[dayOfWeek]++;
+      }
+    });
+    console.log("[Debug] Events by day of week (0=Sunday, 6=Saturday):");
+    console.log(`[Debug] ${eventsByDayOfWeek.join(", ")}`);
 
     let convertedCount = 0;
     let errorCount = 0;
+    let saturdayConvertedCount = 0;
 
     // Process each event
     for (const event of events) {
@@ -1272,10 +1293,15 @@ async function syncWithGoogleCalendar(
 
         if (isSaturday) {
           console.log(
-            `[Debug] Successfully created Saturday timeslot: ${JSON.stringify(
-              createdTimeslot
-            )}`
+            `[Debug] Successfully created Saturday timeslot: ID=${
+              createdTimeslot.id
+            }, Start=${new Date(
+              createdTimeslot.startTime
+            ).toISOString()}, Day=${new Date(
+              createdTimeslot.startTime
+            ).getDay()}`
           );
+          saturdayConvertedCount++;
         }
 
         convertedCount++;
@@ -1286,7 +1312,7 @@ async function syncWithGoogleCalendar(
     }
 
     console.log(
-      `[Debug] Calendar sync completed. Converted: ${convertedCount}, Errors: ${errorCount}`
+      `[Debug] Calendar sync completed. Total: ${convertedCount}, Saturday: ${saturdayConvertedCount}, Errors: ${errorCount}`
     );
 
     // Verify timeslots after sync
@@ -1303,12 +1329,51 @@ async function syncWithGoogleCalendar(
       `[Debug] Saturday timeslots in storage: ${saturdayTimeslots.length}`
     );
 
+    // Verify that all Saturday events were successfully converted to timeslots
+    if (saturdayEvents.length !== saturdayTimeslots.length) {
+      console.log(
+        `[Debug] WARNING: Discrepancy in Saturday events! Google had ${saturdayEvents.length} but storage has ${saturdayTimeslots.length}`
+      );
+
+      // Check which Saturday events might be missing
+      if (saturdayEvents.length > 0 && saturdayTimeslots.length > 0) {
+        console.log("[Debug] Comparing Saturday events to timeslots:");
+
+        // Check if each Google event has a corresponding timeslot
+        saturdayEvents.forEach((event, index) => {
+          if (!event.start?.dateTime) return;
+
+          const eventStartTime = new Date(event.start.dateTime).toISOString();
+          const foundTimeslot = saturdayTimeslots.find(
+            (ts) => new Date(ts.startTime).toISOString() === eventStartTime
+          );
+
+          if (!foundTimeslot) {
+            console.log(
+              `[Debug] Saturday event not found in timeslots: ${event.summary}, Start=${eventStartTime}`
+            );
+          }
+        });
+      }
+    }
+
     if (saturdayTimeslots.length > 0) {
       console.log(
         `[Debug] First Saturday timeslot: ${JSON.stringify(
           saturdayTimeslots[0]
         )}`
       );
+
+      // Log all Saturday timeslots for verification
+      saturdayTimeslots.forEach((ts, index) => {
+        console.log(
+          `[Debug] Saturday timeslot #${index + 1}: ID=${
+            ts.id
+          }, Start=${new Date(ts.startTime).toISOString()}, Day=${new Date(
+            ts.startTime
+          ).getDay()}`
+        );
+      });
     } else {
       console.log(`[Debug] No Saturday timeslots found in storage after sync`);
     }

@@ -9,7 +9,7 @@ import CalendarHeader from "@/components/calendar/CalendarHeader";
 import ConfirmationModal from "@/components/calendar/ConfirmationModal";
 import MonthView from "@/components/calendar/MonthView";
 import Sidebar from "@/components/calendar/Sidebar";
-import WeekView from "@/components/calendar/WeekView";
+import { WeekView } from "@/components/calendar/WeekView";
 
 import {
   createBooking,
@@ -127,19 +127,40 @@ export default function Calendar() {
         }`;
         console.log(`[Debug] Calendar making API request to: ${apiUrl}`);
 
-        // Check if the date range includes Saturday
-        const hasSaturday = Array.from(
-          {
-            length: Math.ceil(
-              (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-            ),
-          },
-          (_, i) => new Date(startDate.getTime() + i * (1000 * 60 * 60 * 24))
-        ).some((date) => date.getDay() === 6);
+        // More accurate check for Saturday in date range
+        const startMs = startDate.getTime();
+        const endMs = endDate.getTime();
+        const dayDuration = 24 * 60 * 60 * 1000; // One day in milliseconds
+        let currentMs = startMs;
+        let hasSaturday = false;
+
+        // Loop through each day in the range
+        while (currentMs <= endMs) {
+          const currentDate = new Date(currentMs);
+          if (currentDate.getDay() === 6) {
+            // 6 = Saturday
+            hasSaturday = true;
+            break;
+          }
+          currentMs += dayDuration;
+        }
 
         console.log(
           `[Debug] Date range ${startDate.toISOString()} to ${endDate.toISOString()} includes Saturday: ${hasSaturday}`
         );
+
+        if (hasSaturday) {
+          console.log(`[Debug] Saturday dates in range:`);
+          // Log all Saturdays in range for verification
+          currentMs = startMs;
+          while (currentMs <= endMs) {
+            const currentDate = new Date(currentMs);
+            if (currentDate.getDay() === 6) {
+              console.log(`[Debug] Saturday: ${currentDate.toISOString()}`);
+            }
+            currentMs += dayDuration;
+          }
+        }
 
         const result = await fetchTimeslots(
           startDate,

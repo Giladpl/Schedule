@@ -178,21 +178,32 @@ export class MemStorage implements IStorage {
         `[Debug] getTimeslotsByDateRange: ${startDate.toISOString()} to ${endDate.toISOString()}`
       );
 
-      // Check if the date range includes Saturday
-      const days = Math.ceil(
-        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      const dateArray = Array.from({ length: days }, (_, i) => {
-        const date = new Date(startDate);
-        date.setDate(date.getDate() + i);
-        return date;
-      });
+      // Check if the date range includes Saturday - improved logic
+      const startMs = startDate.getTime();
+      const endMs = endDate.getTime();
+      const dayDuration = 24 * 60 * 60 * 1000; // One day in milliseconds
+      let currentMs = startMs;
+      let hasSaturday = false;
+      const daysOfWeek: number[] = [];
 
-      const includedDays = dateArray.map((date) => date.getDay());
-      const hasSaturday = includedDays.includes(6);
+      while (currentMs <= endMs) {
+        const currentDate = new Date(currentMs);
+        const dayOfWeek = currentDate.getDay();
+        if (!daysOfWeek.includes(dayOfWeek)) {
+          daysOfWeek.push(dayOfWeek);
+        }
+        if (dayOfWeek === 6) {
+          // 6 = Saturday
+          hasSaturday = true;
+          console.log(
+            `[Debug] Saturday found in range: ${currentDate.toISOString()}`
+          );
+        }
+        currentMs += dayDuration;
+      }
 
       console.log(
-        `[Debug] Date range includes these days of week: ${includedDays.join(
+        `[Debug] Date range includes these days of week: ${daysOfWeek.join(
           ", "
         )}`
       );
@@ -249,12 +260,28 @@ export class MemStorage implements IStorage {
         });
       }
 
+      // Improved date comparison for more accurate matching
       // First filter only by date range without availability check
-      const dateMatchedTimeslots = allTimeslots.filter(
-        (timeslot) =>
-          new Date(timeslot.startTime) >= startDate &&
-          new Date(timeslot.endTime) <= endDate
-      );
+      const dateMatchedTimeslots = allTimeslots.filter((timeslot) => {
+        const slotStartTime = new Date(timeslot.startTime).getTime();
+        const slotEndTime = new Date(timeslot.endTime).getTime();
+
+        // A timeslot is in range if it starts after or at startDate
+        // AND ends before or at endDate
+        const inRange = slotStartTime >= startMs && slotEndTime <= endMs;
+
+        // For debug, log Saturday timeslots that are being filtered out
+        const isSaturday = new Date(timeslot.startTime).getDay() === 6;
+        if (isSaturday) {
+          console.log(
+            `[Debug] Saturday timeslot (${new Date(
+              timeslot.startTime
+            ).toISOString()}) in range: ${inRange}`
+          );
+        }
+
+        return inRange;
+      });
 
       console.log(
         `[Debug] Found ${dateMatchedTimeslots.length} timeslots matching date range before availability check`

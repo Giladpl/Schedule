@@ -47,6 +47,17 @@ export async function fetchTimeslots(
     }`
   );
 
+  // Check date range for Saturday
+  const containsSaturday = checkDateRangeContainsSaturday(startDate, endDate);
+  console.log(`[Debug] Date range contains Saturday: ${containsSaturday}`);
+  if (containsSaturday) {
+    console.log("[Debug] Saturday dates in range:");
+    const saturdayDates = getSaturdaysInRange(startDate, endDate);
+    saturdayDates.forEach((date) => {
+      console.log(`[Debug]   - ${date.toISOString()}`);
+    });
+  }
+
   try {
     // Create an AbortController to timeout the request if it takes too long
     const controller = new AbortController();
@@ -68,10 +79,42 @@ export async function fetchTimeslots(
 
     console.log(`[Debug] Received ${response.length} timeslots`);
 
+    // Check for Saturday timeslots in the response
+    const saturdayTimeslots = response.filter((slot) => {
+      const date = new Date(slot.startTime);
+      return date.getDay() === 6;
+    });
+
+    console.log(
+      `[Debug] Saturday timeslots in response: ${saturdayTimeslots.length}`
+    );
+
+    if (saturdayTimeslots.length > 0) {
+      console.log("[Debug] Saturday timeslots:");
+      saturdayTimeslots.forEach((slot, i) => {
+        console.log(
+          `[Debug]   ${i + 1}. ${new Date(
+            slot.startTime
+          ).toISOString()} - ID: ${slot.id}`
+        );
+      });
+    } else if (containsSaturday) {
+      console.log(
+        "[Debug] No Saturday timeslots were returned despite Saturday being in the date range"
+      );
+    }
+
     if (response.length === 0) {
       console.log(
         `[Debug] Empty timeslots response. Verify server is returning data for this date range.`
       );
+
+      // If we have Saturday in the range but no results, try to sync again
+      if (containsSaturday) {
+        console.log(
+          "[Debug] Date range contains Saturday but no timeslots returned - consider re-syncing with Google Calendar"
+        );
+      }
     } else {
       console.log(`[Debug] First timeslot: ${JSON.stringify(response[0])}`);
       console.log(
@@ -80,6 +123,23 @@ export async function fetchTimeslots(
         ).toISOString()} to ${new Date(
           response[response.length - 1].endTime
         ).toISOString()}`
+      );
+
+      // Verify that the response includes all days in the date range
+      const daysInRange = Math.ceil(
+        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      const uniqueDays = new Set<string>();
+
+      response.forEach((slot) => {
+        const date = new Date(slot.startTime);
+        uniqueDays.add(
+          `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+        );
+      });
+
+      console.log(
+        `[Debug] Date range covers ${daysInRange} days, response includes timeslots for ${uniqueDays.size} unique days`
       );
     }
 
@@ -92,6 +152,44 @@ export async function fetchTimeslots(
     console.error("[Debug] Error fetching timeslots:", error);
     throw error;
   }
+}
+
+// Helper function to check if date range contains Saturday
+function checkDateRangeContainsSaturday(
+  startDate: Date,
+  endDate: Date
+): boolean {
+  const dayMs = 24 * 60 * 60 * 1000;
+  let currentDate = new Date(startDate);
+  const endMs = endDate.getTime();
+
+  while (currentDate.getTime() <= endMs) {
+    if (currentDate.getDay() === 6) {
+      // 6 = Saturday
+      return true;
+    }
+    currentDate = new Date(currentDate.getTime() + dayMs);
+  }
+
+  return false;
+}
+
+// Helper function to get all Saturdays in a date range
+function getSaturdaysInRange(startDate: Date, endDate: Date): Date[] {
+  const saturdays: Date[] = [];
+  const dayMs = 24 * 60 * 60 * 1000;
+  let currentDate = new Date(startDate);
+  const endMs = endDate.getTime();
+
+  while (currentDate.getTime() <= endMs) {
+    if (currentDate.getDay() === 6) {
+      // 6 = Saturday
+      saturdays.push(new Date(currentDate));
+    }
+    currentDate = new Date(currentDate.getTime() + dayMs);
+  }
+
+  return saturdays;
 }
 
 export async function fetchTimeslotById(id: number): Promise<Timeslot> {
