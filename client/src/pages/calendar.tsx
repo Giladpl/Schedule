@@ -177,12 +177,32 @@ export default function Calendar() {
   };
 
   const goToPreviousPeriod = () => {
+    const today = getNowInIsrael();
+
     if (view === "week") {
-      setCurrentDate(addDays(currentDate, -7));
+      // Calculate the previous week's start date
+      const previousWeekDate = addDays(currentDate, -7);
+
+      // If previous week's start date is before today, go to the week containing today
+      if (previousWeekDate < today) {
+        setCurrentDate(today);
+      } else {
+        setCurrentDate(previousWeekDate);
+      }
     } else {
+      // For month view
       const prevMonth = new Date(currentDate);
       prevMonth.setMonth(prevMonth.getMonth() - 1);
-      setCurrentDate(prevMonth);
+
+      // If previous month is before current month (containing today), go to current month
+      const currentMonth = new Date(today);
+      currentMonth.setDate(1); // First day of current month
+
+      if (prevMonth < currentMonth) {
+        setCurrentDate(today);
+      } else {
+        setCurrentDate(prevMonth);
+      }
     }
   };
 
