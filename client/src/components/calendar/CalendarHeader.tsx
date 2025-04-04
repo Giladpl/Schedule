@@ -9,6 +9,7 @@ interface CalendarHeaderProps {
   onToday: () => void;
   currentView: "week" | "month";
   onViewChange: (view: "week" | "month") => void;
+  isPreviousDisabled?: boolean;
 }
 
 export default function CalendarHeader({
@@ -19,6 +20,7 @@ export default function CalendarHeader({
   onToday,
   currentView,
   onViewChange,
+  isPreviousDisabled = false,
 }: CalendarHeaderProps) {
   return (
     <header className="border-b border-[#dadce0] py-4 px-6 flex justify-between items-center sticky top-0 bg-white z-10">
@@ -69,7 +71,10 @@ export default function CalendarHeader({
               variant="ghost"
               size="icon"
               onClick={onPrevious}
-              className="h-9 w-9 rounded-none border-r border-[#dadce0] hover:bg-[#f1f3f4]"
+              disabled={isPreviousDisabled}
+              className={`h-9 w-9 rounded-none border-r border-[#dadce0] hover:bg-[#f1f3f4] ${
+                isPreviousDisabled ? "opacity-30 cursor-not-allowed" : ""
+              }`}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
