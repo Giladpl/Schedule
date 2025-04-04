@@ -80,6 +80,16 @@ export const MEETING_TYPE_STYLES: Record<
   default: { color: "#8b5cf6", name: "" },
 };
 
+// Client type to allowed meeting types mapping
+// Hardcoded mapping based on server data for faster client-side filtering
+export const CLIENT_ALLOWED_MEETING_TYPES: Record<string, string[]> = {
+  all: ["טלפון", "זום", "פגישה"],
+  new_customer: ["טלפון", "זום", "פגישה"],
+  "פולי אחים": ["טלפון", "פגישה"],
+  "מדריכים+": ["טלפון", "זום"],
+  "מכירת עוגות": ["טלפון", "פגישה"],
+};
+
 interface TimeSlotProps extends React.HTMLAttributes<HTMLDivElement> {
   timeslot: Timeslot;
   onClick?: () => void;
@@ -150,6 +160,31 @@ export function TimeSlot({
     .map((type) => type.trim())
     .filter(Boolean);
 
+  // Filter meeting types based on the active client type and what's allowed
+  const filteredMeetingTypes = useMemo(() => {
+    if (!activeClientType || activeClientType === "all") {
+      return meetingTypesList;
+    }
+
+    // Get allowed meeting types for this client
+    const allowedTypes =
+      CLIENT_ALLOWED_MEETING_TYPES[activeClientType] ||
+      CLIENT_ALLOWED_MEETING_TYPES["all"];
+
+    // Only show meeting types that are both in the timeslot AND allowed for this client
+    return meetingTypesList.filter((type) => allowedTypes.includes(type));
+  }, [meetingTypesList, activeClientType]);
+
+  // If after filtering there are no meeting types, don't show this slot at all
+  if (
+    activeClientType &&
+    activeClientType !== "all" &&
+    activeClientType !== timeslot.clientType &&
+    filteredMeetingTypes.length === 0
+  ) {
+    return null;
+  }
+
   return (
     <div
       className={cn(
@@ -190,10 +225,10 @@ export function TimeSlot({
         <span className="text-gray-600 text-[10px] mt-1">{durationStr}</span>
       </div>
 
-      {/* Meeting types as icons */}
-      {meetingTypesList.length > 0 && meetingTypesList[0] !== "all" && (
+      {/* Meeting types as icons - only show filtered types */}
+      {filteredMeetingTypes.length > 0 && filteredMeetingTypes[0] !== "all" && (
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {meetingTypesList.map((type, index) => {
+          {filteredMeetingTypes.map((type, index) => {
             const style =
               MEETING_TYPE_STYLES[type] || MEETING_TYPE_STYLES.default;
             return (

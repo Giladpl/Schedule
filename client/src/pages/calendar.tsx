@@ -9,11 +9,12 @@ import CalendarHeader from "@/components/calendar/CalendarHeader";
 import ConfirmationModal from "@/components/calendar/ConfirmationModal";
 import MonthView from "@/components/calendar/MonthView";
 import Sidebar from "@/components/calendar/Sidebar";
-import { WeekView } from "@/components/calendar/WeekView";
+import WeekView from "@/components/calendar/WeekView";
 
 import {
   createBooking,
-  fetchTimeslots,
+  fetchClientData,
+  getClientTypeDisplayName,
   syncCalendar,
 } from "@/lib/calendarService";
 import { getNowInIsrael } from "@/lib/timeUtils";
@@ -27,6 +28,14 @@ import {
 } from "@/lib/utils";
 import { bookingFormSchema, Timeslot } from "@shared/schema";
 import { z } from "zod";
+
+// Define the client interface based on the actual API response
+interface ClientRuleFromAPI {
+  type: string;
+  meetings: Record<string, number>;
+  id?: number; // Add optional ID field from server
+  [key: string]: any;
+}
 
 export default function Calendar() {
   const [location, navigate] = useLocation();
@@ -48,9 +57,78 @@ export default function Calendar() {
     phone?: string;
     meetingType?: string;
   } | null>(null);
+
+  // Determine if admin mode or client mode
+  const isAdmin = location === "/admin";
+
+  // Determine client type based on query params or default to new_customer for regular users
+  const queryType = searchParams.get("type");
   const [clientType, setClientType] = useState<string>(
-    searchParams.get("type") || "all"
+    isAdmin ? queryType || "all" : queryType || "new_customer"
   );
+
+  // Add a useEffect to fetch client data for matching clientType
+  const [fullClientType, setFullClientType] = useState<string | null>(null);
+
+  // Fetch client data to match short codes to full client types
+  const { data: clientData } = useQuery({
+    queryKey: ["/api/client-data"],
+    queryFn: fetchClientData,
+    staleTime: 60000, // 1 minute
+  });
+
+  // Match client types dynamically based on query param
+  useEffect(() => {
+    if (clientData?.clients && queryType && !isAdmin) {
+      let matchedClient = null;
+
+      // First try to match by numeric ID if queryType is a number
+      if (!isNaN(parseInt(queryType))) {
+        const numericId = parseInt(queryType);
+        matchedClient = clientData.clients.find(
+          (client) => client.id === numericId
+        );
+      }
+
+      // If no match by ID, try exact match by type name
+      if (!matchedClient) {
+        matchedClient = clientData.clients.find(
+          (client) => client.type === queryType
+        );
+      }
+
+      // Legacy fallback: first letter matching (for backward compatibility)
+      if (!matchedClient && queryType.length === 1) {
+        matchedClient = clientData.clients.find((client) =>
+          client.type.startsWith(queryType)
+        );
+      }
+
+      if (matchedClient) {
+        // Update fullClientType but keep clientType as the query parameter for URL maintenance
+        setFullClientType(matchedClient.type);
+      } else {
+        // Set fullClientType to queryType as fallback to ensure filtering still works
+        setFullClientType(queryType);
+      }
+    } else if (!queryType || isAdmin) {
+      setFullClientType(null);
+    }
+  }, [clientData, queryType, isAdmin]);
+
+  // Add a new effect to update document title based on client type
+  useEffect(() => {
+    if (!isAdmin && fullClientType) {
+      document.title = `Schedule - ${getClientTypeDisplayName(fullClientType)}`;
+    } else if (!isAdmin && queryType) {
+      document.title = `Schedule - ${getClientTypeDisplayName(queryType)}`;
+    } else if (isAdmin) {
+      document.title = "Admin Panel - Schedule";
+    } else {
+      document.title = "Schedule Appointment";
+    }
+  }, [isAdmin, queryType, fullClientType]);
+
   const [meetingType, setMeetingType] = useState<string>("all");
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -98,112 +176,45 @@ export default function Calendar() {
       {
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
-        clientType,
+        clientType: fullClientType || clientType,
         meetingType,
       },
     ],
     queryFn: async () => {
-      // Wait for sync to complete before fetching timeslots
-      if (isSyncing) {
-        await new Promise((resolve) => {
-          const checkSync = () => {
-            if (!isSyncing) {
-              resolve(true);
-            } else {
-              setTimeout(checkSync, 100);
-            }
-          };
-          checkSync();
-        });
-      }
-
       try {
+        // Use full client type if we've mapped a single letter to a full client name
+        const typeParam = fullClientType || clientType;
+
+        // Construct the API URL
         const apiUrl = `/api/timeslots?start=${encodeURIComponent(
           startDate.toISOString()
         )}&end=${encodeURIComponent(endDate.toISOString())}${
-          clientType ? `&type=${encodeURIComponent(clientType)}` : ""
+          typeParam ? `&type=${encodeURIComponent(typeParam)}` : ""
         }${
-          meetingType ? `&meetingType=${encodeURIComponent(meetingType)}` : ""
+          meetingType !== "all"
+            ? `&meetingType=${encodeURIComponent(meetingType)}`
+            : ""
         }`;
-        console.log(`[Debug] Calendar making API request to: ${apiUrl}`);
 
-        // More accurate check for Saturday in date range
-        const startMs = startDate.getTime();
-        const endMs = endDate.getTime();
-        const dayDuration = 24 * 60 * 60 * 1000; // One day in milliseconds
-        let currentMs = startMs;
-        let hasSaturday = false;
+        console.log("Fetching timeslots from:", apiUrl);
 
-        // Loop through each day in the range
-        while (currentMs <= endMs) {
-          const currentDate = new Date(currentMs);
-          if (currentDate.getDay() === 6) {
-            // 6 = Saturday
-            hasSaturday = true;
-            break;
-          }
-          currentMs += dayDuration;
+        const response = await fetch(apiUrl);
+        if (!response.ok) {
+          throw new Error(`API request failed with status ${response.status}`);
         }
 
-        console.log(
-          `[Debug] Date range ${startDate.toISOString()} to ${endDate.toISOString()} includes Saturday: ${hasSaturday}`
-        );
+        const data = await response.json();
+        console.log(`Received ${data.length} timeslots from API`);
 
-        if (hasSaturday) {
-          console.log(`[Debug] Saturday dates in range:`);
-          // Log all Saturdays in range for verification
-          currentMs = startMs;
-          while (currentMs <= endMs) {
-            const currentDate = new Date(currentMs);
-            if (currentDate.getDay() === 6) {
-              console.log(`[Debug] Saturday: ${currentDate.toISOString()}`);
-            }
-            currentMs += dayDuration;
-          }
-        }
-
-        const result = await fetchTimeslots(
-          startDate,
-          endDate,
-          clientType,
-          meetingType
-        );
-
-        console.log(
-          `[Debug] Calendar received ${result.length} timeslots from API`
-        );
-
-        // Check for Saturday timeslots in the result
-        const saturdayTimeslots = result.filter((slot) => {
-          const date = new Date(slot.startTime);
-          return date.getDay() === 6;
-        });
-
-        console.log(
-          `[Debug] Found ${saturdayTimeslots.length} Saturday timeslots in API response`
-        );
-
-        if (saturdayTimeslots.length > 0) {
-          console.log(
-            `[Debug] First Saturday timeslot: ${JSON.stringify(
-              saturdayTimeslots[0]
-            )}`
-          );
-        } else if (hasSaturday) {
-          console.log(
-            `[Debug] No Saturday timeslots found although the date range includes Saturday`
-          );
-        }
-
-        return result;
-      } catch (e) {
-        console.error("Error fetching timeslots:", e);
-        return []; // Return empty array on error to prevent perpetual loading
+        return data;
+      } catch (error) {
+        console.error("Error fetching timeslots:", error);
+        throw error;
       }
     },
+    // Disable background refetching to improve performance
     refetchOnWindowFocus: false,
-    staleTime: 30000, // Cache for 30 seconds
-    retry: 1, // Only retry once on failure
+    staleTime: 1000 * 60 * 5, // 5 minutes - reduce API calls
   });
 
   // Error handling
@@ -232,7 +243,7 @@ export default function Calendar() {
             {
               startDate: startDate.toISOString(),
               endDate: endDate.toISOString(),
-              clientType,
+              clientType: fullClientType || clientType,
               meetingType,
             },
           ],
@@ -244,7 +255,7 @@ export default function Calendar() {
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [isLoading, startDate, endDate, clientType, meetingType]);
+  }, [isLoading, startDate, endDate, clientType, meetingType, fullClientType]);
 
   // Refetch timeslots when synchronization completes
   useEffect(() => {
@@ -406,15 +417,17 @@ export default function Calendar() {
     mutate(formData);
   };
 
-  // Handle client type change
+  // Handle client type change - only allowed for admin
   const handleClientTypeChange = (value: string) => {
+    if (!isAdmin) return; // Only admins can change client type directly
+
     setClientType(value);
 
     // Update URL with wouter navigation
     if (value === "all") {
-      navigate("/calendar");
+      navigate(isAdmin ? "/admin" : "/calendar");
     } else {
-      navigate(`/calendar?type=${value}`);
+      navigate(`${isAdmin ? "/admin" : "/calendar"}?type=${value}`);
     }
   };
 
@@ -434,6 +447,7 @@ export default function Calendar() {
         currentView={view}
         onViewChange={setView}
         isPreviousDisabled={isPreviousDisabled()}
+        isAdmin={isAdmin}
       />
 
       <main className="flex-1 flex overflow-hidden h-full">
@@ -442,6 +456,7 @@ export default function Calendar() {
           onClientTypeChange={handleClientTypeChange}
           meetingType={meetingType}
           onMeetingTypeChange={handleMeetingTypeChange}
+          isAdmin={isAdmin}
         />
 
         {isLoading ? (
@@ -468,30 +483,24 @@ export default function Calendar() {
             </svg>
             <p className="text-[#5f6368]">Loading calendar...</p>
           </div>
+        ) : view === "week" ? (
+          <WeekView
+            weekDays={weekDays}
+            timeslots={timeslots}
+            onSelectTimeslot={handleSelectTimeslot}
+            selectedDate={currentDate}
+            onSelectDate={handleSelectDate}
+            clientType={fullClientType || clientType}
+            isAdmin={isAdmin}
+            meetingType={meetingType}
+          />
         ) : (
-          <div className="flex-1 flex flex-col h-full">
-            {view === "week" ? (
-              <div className="calendar-container w-full h-full">
-                <WeekView
-                  weekDays={weekDays}
-                  timeslots={timeslots}
-                  onSelectTimeslot={handleSelectTimeslot}
-                  selectedDate={currentDate}
-                  onSelectDate={handleSelectDate}
-                  clientType={clientType}
-                />
-              </div>
-            ) : (
-              <div className="calendar-container w-full h-full">
-                <MonthView
-                  currentDate={currentDate}
-                  timeslots={timeslots}
-                  onSelectDate={handleSelectDate}
-                  clientType={clientType}
-                />
-              </div>
-            )}
-          </div>
+          <MonthView
+            currentDate={currentDate}
+            timeslots={timeslots}
+            onSelectDate={handleSelectDate}
+            clientType={fullClientType || clientType}
+          />
         )}
       </main>
 

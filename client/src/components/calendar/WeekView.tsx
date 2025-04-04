@@ -10,7 +10,7 @@ import { getNowInIsrael } from "@/lib/timeUtils";
 import { getDayName, getDayOfMonth, isSameDay } from "@/lib/utils";
 import { Timeslot } from "@shared/schema";
 import { Calendar, ChevronDown, Info } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 // Add a useWindowSize hook to track screen size
 function useWindowSize() {
@@ -51,18 +51,44 @@ interface WeekViewProps {
   selectedDate: Date | null;
   onSelectDate?: (date: Date) => void; // Add optional onSelectDate prop
   clientType?: string; // Add clientType prop
+  isAdmin?: boolean;
 }
 
 // Simple info component instead of full legend
-function CalendarInfo() {
+function CalendarInfo({
+  isAdmin = false,
+  userType = "new_customer",
+}: {
+  isAdmin?: boolean;
+  userType?: string;
+}) {
   return (
     <div className="bg-white p-2 mb-2 border border-[#dadce0] rounded-lg">
       <div className="flex items-start gap-2">
         <Info size={16} className="text-[#5f6368] mt-0.5" />
         <div className="text-sm text-[#5f6368]">
-          When multiple meeting types are available for a time slot, you'll see{" "}
-          <strong>"X options available"</strong>. Click on any slot to view and
-          select your preferred meeting type.
+          {isAdmin ? (
+            <>
+              Admin Panel: You can see all appointment slots and filter by
+              client type.
+            </>
+          ) : (
+            <>
+              {userType === "new_customer" ? (
+                <>
+                  When multiple meeting types are available for a time slot,
+                  you'll see <strong>"X options available"</strong>. Click on
+                  any slot to view and select your preferred meeting type.
+                </>
+              ) : (
+                <>
+                  You are viewing the schedule as a{" "}
+                  {getClientTypeDisplayName(userType)} client. Only slots
+                  available for your client type are shown.
+                </>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -325,6 +351,36 @@ function ExpandableTimeslots({
   );
 }
 
+// Filter timeslots for the day
+const getTimeslotsForDay = (
+  date: Date,
+  timeslots: Timeslot[],
+  meetingType: string
+): Timeslot[] => {
+  if (!timeslots) return [];
+
+  // Simple date string comparison for better performance
+  const dateString = date.toISOString().split("T")[0];
+
+  // Filter by date first
+  const dayTimeslots = timeslots.filter((slot) => {
+    const slotDate = new Date(slot.startTime);
+    const slotDateString = slotDate.toISOString().split("T")[0];
+    return slotDateString === dateString;
+  });
+
+  // If no meeting type filter is applied, just return all timeslots for this day
+  if (!meetingType || meetingType === "all") {
+    return dayTimeslots;
+  }
+
+  // Otherwise, filter by meeting type
+  return dayTimeslots.filter((slot) => {
+    const slotTypes = slot.meetingTypes.split(",").map((t) => t.trim());
+    return slotTypes.includes(meetingType);
+  });
+};
+
 // Component for a day's schedule
 function DaySchedule({
   day,
@@ -333,6 +389,8 @@ function DaySchedule({
   selectedDate,
   onSelectDate,
   clientType,
+  isAdmin,
+  meetingType,
 }: {
   day: Date;
   timeslots: Timeslot[];
@@ -340,10 +398,48 @@ function DaySchedule({
   selectedDate: Date | null;
   onSelectDate?: (date: Date) => void;
   clientType?: string;
+  isAdmin?: boolean;
+  meetingType?: string;
 }) {
   const { width, height } = useWindowSize();
-  const isMobile = width < 768; // Mobile breakpoint
-  const isSmallScreen = width < 1024; // Small screen breakpoint
+  const isMobile = useMemo(() => {
+    return width < 640;
+  }, [width]);
+
+  // Add a local ref for scrolling to the current time
+  const timelineRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (timelineRef.current) {
+      timelineRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+  }, []);
+
+  const now = getNowInIsrael();
+
+  // Filter timeslots for this day only - use the filtered data from the API
+  const dayTimeslots = useMemo(() => {
+    return getTimeslotsForDay(day, timeslots, meetingType || "all");
+  }, [timeslots, day, meetingType]);
+
+  // Group timeslots by their exact start/end times
+  const groupedByTime = useMemo(() => {
+    const groups: Record<string, Timeslot[]> = {};
+    dayTimeslots.forEach((slot) => {
+      const key = `${slot.startTime}_${slot.endTime}`;
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+      groups[key].push(slot);
+    });
+    return groups;
+  }, [dayTimeslots]);
+
+  // Get grouped visible timeslots for rendering
+  const visibleHourlySlots = groupTimeslotsByHour(dayTimeslots);
 
   // Fixed hour range - from 7 AM to 10 PM (7-22)
   const START_HOUR = 7;
@@ -363,32 +459,8 @@ function DaySchedule({
     return Array.from({ length: TOTAL_HOURS }, (_, i) => i + START_HOUR);
   }, []);
 
-  const today = getNowInIsrael();
-
-  // Filter timeslots for this day only
-  const dayTimeslots = useMemo(() => {
-    return timeslots.filter((slot) => {
-      const slotDate = new Date(slot.startTime);
-      return (
-        slotDate.getDate() === day.getDate() &&
-        slotDate.getMonth() === day.getMonth() &&
-        slotDate.getFullYear() === day.getFullYear()
-      );
-    });
-  }, [timeslots, day]);
-
-  // Group timeslots by their exact start/end times
-  const groupedByTime = useMemo(() => {
-    const groups: Record<string, Timeslot[]> = {};
-    dayTimeslots.forEach((slot) => {
-      const key = `${slot.startTime}_${slot.endTime}`;
-      if (!groups[key]) {
-        groups[key] = [];
-      }
-      groups[key].push(slot);
-    });
-    return groups;
-  }, [dayTimeslots]);
+  const { width: globalWidth } = useWindowSize();
+  const isSmallScreen = globalWidth < 1024; // Small screen breakpoint
 
   if (isMobile) {
     return (
@@ -433,7 +505,7 @@ function DaySchedule({
                 </div>
 
                 {/* Render timeslots for the day */}
-                {Object.entries(groupedByTime).map(
+                {Object.entries(visibleHourlySlots).map(
                   ([timeKey, slots], groupIdx) => {
                     const firstSlot = slots[0];
                     const startTime = new Date(firstSlot.startTime);
@@ -511,12 +583,12 @@ function DaySchedule({
       >
         <div
           className={`text-center py-3 relative ${
-            isSameDay(day, today) ? "bg-[#e8f0fe]" : ""
+            isSameDay(day, now) ? "bg-[#e8f0fe]" : ""
           }`}
         >
           <div
             className={`text-sm font-medium ${
-              isSameDay(day, today) ? "text-[#1a73e8]" : "text-[#5f6368]"
+              isSameDay(day, now) ? "text-[#1a73e8]" : "text-[#5f6368]"
             }`}
           >
             {getDayName(day)}
@@ -524,7 +596,7 @@ function DaySchedule({
           <div className="flex justify-center items-center mt-1">
             <div
               className={`${
-                isSameDay(day, today)
+                isSameDay(day, now)
                   ? "text-[#1a73e8] bg-[#1a73e8] bg-opacity-10 rounded-full"
                   : ""
               } w-10 h-10 flex items-center justify-center font-google-sans text-xl`}
@@ -573,7 +645,7 @@ function DaySchedule({
               ))}
 
               {/* Render the timeslots */}
-              {Object.entries(groupedByTime).map(
+              {Object.entries(visibleHourlySlots).map(
                 ([timeKey, slots], groupIdx) => {
                   const firstSlot = slots[0];
                   const startTime = new Date(firstSlot.startTime);
@@ -681,99 +753,69 @@ function DaySchedule({
   );
 }
 
-export function WeekView({
+export default function WeekView({
   weekDays,
   timeslots,
   onSelectTimeslot,
   selectedDate,
   onSelectDate,
-  clientType,
-}: WeekViewProps) {
-  const { width } = useWindowSize();
-  const isMobile = width < 768; // Mobile breakpoint
-  const isSmallScreen = width < 1024; // Small screen breakpoint
+  clientType = "all",
+  isAdmin = false,
+  meetingType = "all",
+}: WeekViewProps & { meetingType?: string }) {
+  // Clear any potentially duplicated container refs
+  const containerRef = React.useRef<HTMLDivElement>(null);
 
-  const today = getNowInIsrael();
+  // Calculate available height for the time grid
+  const [availableHeight, setAvailableHeight] = useState<number>(600);
+  const { width, height } = useWindowSize();
 
-  // To correctly handle Saturday slots
-  const hasSaturday = weekDays.some((day) => day.getDay() === 6);
+  useEffect(() => {
+    // Calculate available height
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      // Set the available height, minus some padding for headers, etc.
+      setAvailableHeight(Math.max(window.innerHeight - rect.top - 40, 400));
+    }
+  }, [width, height]);
 
-  if (isMobile) {
-    // Mobile view implementation
-    const [activeDate, setActiveDate] = useState<Date>(selectedDate || today);
+  // Use a fixed hour range for consistency
+  const startHour = 7; // 7 AM
+  const endHour = 22; // 10 PM
+  const totalHours = endHour - startHour;
 
-    useEffect(() => {
-      if (selectedDate) {
-        setActiveDate(selectedDate);
-      }
-    }, [selectedDate]);
+  // Adapt hour height based on available space
+  const hourHeight = availableHeight / totalHours;
 
-    const handleDateSelect = (date: Date) => {
-      setActiveDate(date);
-      if (onSelectDate) {
-        onSelectDate(date);
-      }
-    };
+  // Pre-filter all timeslots by meeting type if specified - this is crucial for correct filtering
+  const filteredTimeslots = useMemo(() => {
+    if (meetingType && meetingType !== "all") {
+      return timeslots.filter((slot) =>
+        slot.meetingTypes.split(",").some((t) => t.trim() === meetingType)
+      );
+    }
+    return timeslots;
+  }, [timeslots, meetingType]);
 
-    return (
-      <div className="flex-1 flex flex-col h-full">
-        <CalendarInfo />
-
-        {/* Mobile date selector */}
-        <div className="flex overflow-x-auto hide-scrollbar py-2">
-          {weekDays.map((day, i) => (
-            <div
-              key={i}
-              className={`flex-shrink-0 px-3 py-2 mx-1 rounded-full cursor-pointer ${
-                isSameDay(day, activeDate)
-                  ? "bg-blue-500 text-white"
-                  : "bg-gray-100"
-              }`}
-              onClick={() => handleDateSelect(day)}
-            >
-              <div className="text-center min-w-[40px]">
-                <div className="text-xs font-medium">{getDayName(day)}</div>
-                <div className="text-lg font-bold flex justify-center">
-                  {getDayOfMonth(day)}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Mobile day content */}
-        <DaySchedule
-          day={activeDate}
-          timeslots={timeslots}
-          onSelectTimeslot={onSelectTimeslot}
-          selectedDate={selectedDate}
-          onSelectDate={onSelectDate}
-          clientType={clientType}
-        />
-      </div>
-    );
-  }
-
-  // Desktop view - fixed height, no scrolling
   return (
-    <div className="h-full w-full flex flex-col">
-      <CalendarInfo />
-      <div className="flex-1 flex overflow-hidden">
-        {weekDays.map((day, index) => (
-          <div
-            key={index}
-            className="flex-1 flex flex-col border-r border-[#dadce0] last:border-r-0"
-            style={{ minWidth: "120px" }}
-          >
-            <DaySchedule
-              day={day}
-              timeslots={timeslots}
-              onSelectTimeslot={onSelectTimeslot}
-              selectedDate={selectedDate}
-              onSelectDate={onSelectDate}
-              clientType={clientType}
-            />
-          </div>
+    <div
+      ref={containerRef}
+      className="flex-1 flex flex-col h-full overflow-hidden"
+    >
+      <CalendarInfo isAdmin={isAdmin} />
+      <div className="grid grid-cols-7 gap-0 border border-[#dadce0] flex-1 overflow-hidden">
+        {weekDays.map((day, i) => (
+          <DaySchedule
+            key={i}
+            day={day}
+            timeslots={filteredTimeslots}
+            onSelectTimeslot={onSelectTimeslot}
+            selectedDate={selectedDate}
+            onSelectDate={onSelectDate}
+            clientType={clientType}
+            isAdmin={isAdmin}
+            meetingType={meetingType}
+          />
         ))}
       </div>
     </div>

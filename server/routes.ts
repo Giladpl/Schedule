@@ -87,151 +87,130 @@ export async function registerRoutes(app: Express): Promise<void> {
       const startDate = new Date(start as string);
       const endDate = new Date(end as string);
 
-      // Get timeslots for the date range directly - our improved storage function handles dates correctly
+      // Get timeslots for the date range
       let timeslots = await storage.getTimeslotsByDateRange(startDate, endDate);
-      console.log(
-        `[Debug API] Found ${timeslots.length} timeslots in date range`
-      );
 
-      // For debugging: log day distribution
-      const dayDistribution = Array(7).fill(0);
-      timeslots.forEach((slot) => {
-        const day = new Date(slot.startTime).getDay();
-        dayDistribution[day]++;
-      });
-      console.log(
-        `[Debug API] Day distribution (0=Sunday, 6=Saturday): ${dayDistribution.join(
-          ", "
-        )}`
-      );
-
-      // For backwards compatibility, still log Saturday information
-      const hasSaturday = checkDateRangeContainsSaturday(startDate, endDate);
-      if (hasSaturday) {
-        // Log all Saturdays in the range
-        let saturdayDates: Date[] = [];
-        const dayMs = 24 * 60 * 60 * 1000;
-        let currentMs = startDate.getTime();
-        const endMs = endDate.getTime();
-
-        while (currentMs <= endMs) {
-          const currentDate = new Date(currentMs);
-          if (currentDate.getDay() === 6) {
-            // 6 = Saturday
-            saturdayDates.push(new Date(currentMs));
-          }
-          currentMs += dayMs;
-        }
-
-        console.log(
-          `[Debug API] Date range includes ${saturdayDates.length} Saturdays`
-        );
-
-        // Count Saturday timeslots in the response
-        const saturdayTimeslots = timeslots.filter((slot) => {
-          const day = new Date(slot.startTime).getDay();
-          return day === 6;
-        });
-
-        console.log(
-          `[Debug API] Found ${saturdayTimeslots.length} Saturday timeslots in response`
-        );
+      // Early return for empty results to avoid processing
+      if (!timeslots.length) {
+        return res.json([]);
       }
 
       // Apply client type filter if provided
       if (type && type !== "all") {
-        // צעד 1: סינון בסיסי לפי סוג לקוח
-        timeslots = timeslots.filter(
-          (slot) => slot.clientType === type || slot.clientType === "all"
+        const targetClientType = type as string;
+        const validClientTypes = new Set(["all"]);
+        validClientTypes.add(targetClientType);
+
+        // Get client rules to check allowed meeting types
+        const allClientRules = await storage.getClientRules();
+        let selectedClientRules: any[] = [];
+
+        // First try exact match by client type
+        selectedClientRules = allClientRules.filter(
+          (rule) => rule.clientType === targetClientType
         );
 
-        // צעד 2: בדוק את כללי הלקוח כדי לסנן סוגי פגישות לא זמינים
-        try {
-          // קבל את כל כללי הלקוח כדי למצוא את כל סוגי הפגישות המותרים
-          const allClientRules = await storage.getClientRules();
-
-          // מצא את הכללים הרלוונטיים לסוג הלקוח הזה
-          const rulesForThisClient = allClientRules.filter(
-            (rule) => rule.clientType === (type as string) && rule.isActive
+        // If no exact match, try by numeric ID
+        if (
+          selectedClientRules.length === 0 &&
+          !isNaN(parseInt(targetClientType))
+        ) {
+          const numericId = parseInt(targetClientType);
+          const matchByRowId = allClientRules.find(
+            (rule) => rule.rowId === numericId
           );
-
-          if (rulesForThisClient.length > 0) {
+          if (matchByRowId) {
             console.log(
-              `[Debug API] Found ${
-                rulesForThisClient.length
-              } rules for client type ${type as string}`
+              `Found client rule by rowId ${numericId}: ${matchByRowId.clientType}`
             );
-
-            // צור מערך של כל סוגי הפגישות המותרים
-            const allMeetingTypesForClient: string[] = [];
-
-            // עבור כל כלל, הוסף את סוג הפגישה לרשימה (אם הוא קיים)
-            rulesForThisClient.forEach((rule) => {
-              if (rule.allowedTypes && rule.allowedTypes.trim()) {
-                allMeetingTypesForClient.push(rule.allowedTypes.trim());
-                console.log(
-                  `[Debug API] Adding allowed type: ${rule.allowedTypes} from rule ID ${rule.id}`
-                );
-              }
-            });
-
-            console.log(
-              `[Debug API] All allowed meeting types for ${
-                type as string
-              }: ${allMeetingTypesForClient.join(", ")}`
-            );
-
-            // סנן את הפגישות לפי סוגי הפגישות המותרים
-            timeslots = timeslots.filter((slot) => {
-              const slotMeetingTypes = slot.meetingTypes
-                .split(",")
-                .map((t) => t.trim());
-
-              // בדוק אם יש לפחות סוג פגישה אחד משותף
-              const hasAllowedType = slotMeetingTypes.some((slotType) =>
-                allMeetingTypesForClient.includes(slotType)
-              );
-
-              // לוג מפורט לדיבוג
-              if (slot.startTime.toString().includes("2025-04-05")) {
-                console.log(
-                  `[Debug API] Saturday slot ${new Date(
-                    slot.startTime
-                  ).toISOString()}: ` +
-                    `types=${slotMeetingTypes.join(
-                      ","
-                    )} allowed=${hasAllowedType}`
-                );
-              }
-
-              return hasAllowedType;
-            });
-
-            console.log(
-              `[Debug API] After filtering by actual allowed types: ${timeslots.length} timeslots`
-            );
-          } else {
-            console.log(
-              `[Debug API] No rules found for client type ${type as string}`
+            validClientTypes.add(matchByRowId.clientType);
+            selectedClientRules = allClientRules.filter(
+              (rule) => rule.clientType === matchByRowId.clientType
             );
           }
-        } catch (error) {
-          console.error(
-            `[Debug API] Error applying client rule filtering:`,
-            error
-          );
-          // במקרה של שגיאה, נמשיך עם הסינון הבסיסי
         }
+
+        // If still no match, try by first letter for legacy support
+        if (selectedClientRules.length === 0 && targetClientType.length === 1) {
+          const matchingRules = allClientRules.filter((rule) =>
+            rule.clientType.startsWith(targetClientType)
+          );
+
+          if (matchingRules.length > 0) {
+            matchingRules.forEach((rule) => {
+              console.log(
+                `Found client rule by first letter ${targetClientType}: ${rule.clientType}`
+              );
+              validClientTypes.add(rule.clientType);
+            });
+            selectedClientRules = matchingRules;
+          }
+        }
+
+        // Get the allowed meeting types for this client
+        const allowedMeetingTypes = new Set<string>();
+        selectedClientRules.forEach((rule) => {
+          if (rule.allowedTypes) {
+            rule.allowedTypes.split(",").forEach((type: string) => {
+              allowedMeetingTypes.add(type.trim());
+            });
+          }
+        });
+
+        console.log(
+          `Allowed meeting types for ${targetClientType}: ${Array.from(
+            allowedMeetingTypes
+          ).join(", ")}`
+        );
+
+        // Filter timeslots by client type AND allowed meeting types
+        timeslots = timeslots.filter((slot) => {
+          // First check if this slot is specifically for this client
+          if (
+            validClientTypes.has(slot.clientType) &&
+            slot.clientType !== "all"
+          ) {
+            return true;
+          }
+
+          // If the slot is for "all" clients, check if the meeting type is allowed
+          if (slot.clientType === "all") {
+            // Get the meeting types for this slot
+            const slotMeetingTypes = slot.meetingTypes
+              .split(",")
+              .map((t) => t.trim());
+
+            // If no specific client rules found, allow all meeting types
+            if (allowedMeetingTypes.size === 0) {
+              return true;
+            }
+
+            // Check if ANY of the slot's meeting types are allowed for this client
+            return slotMeetingTypes.some((meetingType) =>
+              allowedMeetingTypes.has(meetingType)
+            );
+          }
+
+          return false;
+        });
+
+        console.log(
+          `After client type filtering: ${timeslots.length} timeslots remaining`
+        );
       }
 
       // Apply meeting type filter if provided
       if (meetingType && meetingType !== "all") {
         timeslots = timeslots.filter((slot) =>
-          slot.meetingTypes.includes(meetingType as string)
+          slot.meetingTypes.split(",").some((t) => t.trim() === meetingType)
+        );
+        console.log(
+          `After meeting type filtering: ${timeslots.length} timeslots remaining`
         );
       }
 
-      res.json(timeslots);
+      // Return filtered timeslots directly
+      return res.json(timeslots);
     } catch (error) {
       console.error("Error getting timeslots:", error);
       res.status(500).json({ error: "Failed to get timeslots" });
@@ -316,7 +295,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       const rules = await storage.getClientRules();
 
       // Group rules by client type
-      const clientMap: Map<string, Map<string, number>> = new Map();
+      const clientMap: Map<
+        string,
+        { meetings: Map<string, number>; rowId?: number | null }
+      > = new Map();
 
       // Process each rule
       rules.forEach((rule) => {
@@ -327,32 +309,36 @@ export async function registerRoutes(app: Express): Promise<void> {
 
         // Get meetingType map for this client, or create a new one
         if (!clientMap.has(clientType)) {
-          clientMap.set(clientType, new Map<string, number>());
+          clientMap.set(clientType, {
+            meetings: new Map<string, number>(),
+            rowId: rule.rowId, // Store the rowId from the sheet, not the DB ID
+          });
         }
 
-        const meetingsMap = clientMap.get(clientType)!;
+        const clientData = clientMap.get(clientType)!;
 
         // Each rule has a single meeting type and duration
         const meetingType = rule.allowedTypes;
 
         // Only add if valid meeting type and duration
         if (meetingType && meetingType.trim() !== "" && rule.duration > 0) {
-          meetingsMap.set(meetingType, rule.duration);
+          clientData.meetings.set(meetingType, rule.duration);
         }
       });
 
       // Convert to the exact format requested
       const result = {
-        clients: Array.from(clientMap.entries()).map(([type, meetingsMap]) => {
+        clients: Array.from(clientMap.entries()).map(([type, clientData]) => {
           // Convert the meetings Map to the required format object
           const meetings: Record<string, number> = {};
-          meetingsMap.forEach((duration, meetingType) => {
+          clientData.meetings.forEach((duration, meetingType) => {
             meetings[meetingType] = duration;
           });
 
           return {
             type,
             meetings,
+            id: clientData.rowId, // Use the rowId from the sheet as the client ID
           };
         }),
       };
@@ -978,6 +964,9 @@ async function loadClientRulesFromSheets(sheets: sheets_v4.Sheets | null) {
       // Skip rows with insufficient data
       if (!row || row.length < 3) continue;
 
+      // Get row ID from column A (index 0)
+      const rowId = row[0]?.trim();
+
       // Get client type from column B (index 1)
       const clientTypeValue = row[1]?.trim();
       if (!clientTypeValue) continue;
@@ -991,7 +980,9 @@ async function loadClientRulesFromSheets(sheets: sheets_v4.Sheets | null) {
         continue;
       }
 
-      console.log(`Processing row for client type: ${clientTypeValue}`);
+      console.log(
+        `Processing row for client type: ${clientTypeValue}, ID: ${rowId}`
+      );
 
       // Create client rule for each meeting type with a duration > 0
       for (const meetingTypeHeader of meetingTypeHeaders) {
@@ -1001,6 +992,10 @@ async function loadClientRulesFromSheets(sheets: sheets_v4.Sheets | null) {
         // Skip if no valid duration
         if (isNaN(duration) || duration <= 0) continue;
 
+        // Parse numeric row ID if available
+        const numericId =
+          rowId && !isNaN(parseInt(rowId)) ? parseInt(rowId) : null;
+
         // Create a rule for this client type and meeting type
         await storage.createClientRule({
           clientType: clientTypeValue,
@@ -1008,10 +1003,11 @@ async function loadClientRulesFromSheets(sheets: sheets_v4.Sheets | null) {
           allowedTypes: meetingTypeHeader.name,
           isActive: true,
           displayName: clientTypeValue,
+          rowId: numericId, // Store the original row ID from the sheet
         });
 
         console.log(
-          `Added rule for ${clientTypeValue} - ${meetingTypeHeader.name}: ${duration} minutes`
+          `Added rule for ${clientTypeValue} (ID: ${numericId}) - ${meetingTypeHeader.name}: ${duration} minutes`
         );
       }
     }

@@ -56,6 +56,7 @@ export const clientRules = pgTable("client_rules", {
   allowedTypes: text("allowed_types").notNull(), // comma-separated meeting types
   isActive: boolean("is_active").notNull().default(true),
   displayName: text("display_name"), // Optional display name (e.g., for Hebrew names)
+  rowId: integer("row_id"), // ID from Google Sheet (column A)
 });
 
 // Helper type for runtime use
@@ -66,6 +67,7 @@ export type ClientRuleWithDisplayName = {
   allowedTypes: string;
   isActive: boolean;
   displayName: string | null;
+  rowId: number | null; // ID from Google Sheet
 };
 
 export const insertClientRuleSchema = createInsertSchema(clientRules).omit({

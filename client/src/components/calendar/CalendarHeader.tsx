@@ -10,6 +10,7 @@ interface CalendarHeaderProps {
   currentView: "week" | "month";
   onViewChange: (view: "week" | "month") => void;
   isPreviousDisabled?: boolean;
+  isAdmin?: boolean;
 }
 
 export default function CalendarHeader({
@@ -21,12 +22,13 @@ export default function CalendarHeader({
   currentView,
   onViewChange,
   isPreviousDisabled = false,
+  isAdmin = false,
 }: CalendarHeaderProps) {
   return (
     <header className="border-b border-[#dadce0] py-4 px-6 flex justify-between items-center sticky top-0 bg-white z-10">
       <div className="flex items-center">
         <h1 className="text-xl font-medium text-[#202124] font-google-sans">
-          Meeting Scheduler
+          {isAdmin ? "Admin Panel" : "Meeting Scheduler"}
         </h1>
         <div className="ml-6 hidden md:flex">
           <Button

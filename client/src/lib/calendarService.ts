@@ -357,6 +357,7 @@ export async function syncCalendar(): Promise<void> {
 export interface ClientRule {
   type: string;
   meetings: Record<string, number>;
+  id?: number; // Add numeric ID from server
 }
 
 let clientRules: ClientRule[] = [];
