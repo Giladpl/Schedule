@@ -30,16 +30,24 @@
 /* Fix for the today highlight */
 .border-b {
   position: relative;
-  z-index: 5;
+  z-index: 15;
 }
 
+/* Make sure the header row stays on top */
 .calendar-column {
   position: relative;
+  overflow: hidden;
 }
 
-/* Make sure the time slots appear above the grid but below headers */
+/* Z-index hierarchy for proper layering */
 .w-16.absolute.left-0.top-0 {
   z-index: 20;
+}
+
+.calendar-column .font-google-sans {
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 /* Hide scrollbars but maintain scroll functionality */
@@ -57,7 +65,7 @@
   position: sticky;
   left: 0;
   background-color: white;
-  z-index: 15;
+  z-index: 25;
 }
 
 /* Expandable timeslots styling */

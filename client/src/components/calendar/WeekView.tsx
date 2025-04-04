@@ -397,14 +397,14 @@ function DaySchedule({
 
           <div className="relative flex-1 overflow-auto hide-scrollbar">
             {/* Time markers */}
-            <div className="absolute left-0 top-0 bottom-0 w-16 z-10">
+            <div className="absolute left-0 top-0 bottom-0 w-16 z-30">
               {hours.map((hour, index) => (
                 <div
                   key={index}
                   className="flex items-center"
                   style={{ height: `${hourHeight}px` }}
                 >
-                  <div className="w-16 text-xs text-gray-500 z-10 bg-white bg-opacity-90 px-2 py-1 sticky left-0 font-medium">
+                  <div className="w-16 text-xs text-gray-500 z-30 bg-white bg-opacity-90 px-2 py-1 sticky left-0 font-medium">
                     {`${hour}:00`}
                   </div>
                 </div>
@@ -485,9 +485,9 @@ function DaySchedule({
   return (
     <div className="flex-1 flex flex-col h-full">
       {/* Day header */}
-      <div className="border-b border-[#dadce0] flex-shrink-0 relative z-10">
+      <div className="border-b border-[#dadce0] flex-shrink-0 relative z-20">
         <div
-          className={`text-center py-3 calendar-column ${
+          className={`text-center py-3 calendar-column overflow-hidden ${
             isSameDay(day, today) ? "bg-[#e8f0fe]" : ""
           }`}
         >
@@ -499,13 +499,19 @@ function DaySchedule({
             {getDayName(day)}
           </div>
           <div
-            className={`font-google-sans text-xl mt-1 ${
-              isSameDay(day, today)
-                ? "text-[#1a73e8] bg-[#1a73e8] bg-opacity-10 rounded-full w-10 h-10 flex items-center justify-center mx-auto"
-                : ""
+            className={`font-google-sans text-xl mt-1 flex items-center justify-center ${
+              isSameDay(day, today) ? "text-[#1a73e8]" : ""
             }`}
           >
-            {getDayOfMonth(day)}
+            <span
+              className={`${
+                isSameDay(day, today)
+                  ? "bg-[#1a73e8] bg-opacity-10 rounded-full w-10 h-10 flex items-center justify-center"
+                  : ""
+              }`}
+            >
+              {getDayOfMonth(day)}
+            </span>
           </div>
         </div>
       </div>
@@ -525,7 +531,7 @@ function DaySchedule({
             }}
           >
             {/* Hour markers */}
-            <div className="w-16 absolute left-0 top-0 border-r border-[#dadce0] bg-white z-10 sticky">
+            <div className="w-16 absolute left-0 top-0 border-r border-[#dadce0] bg-white z-30 sticky">
               {hours.map((hour, index) => (
                 <div
                   key={index}
@@ -706,9 +712,11 @@ export function WeekView({
               }`}
               onClick={() => handleDateSelect(day)}
             >
-              <div className="text-center">
+              <div className="text-center min-w-[40px]">
                 <div className="text-xs font-medium">{getDayName(day)}</div>
-                <div className="text-lg font-bold">{getDayOfMonth(day)}</div>
+                <div className="text-lg font-bold flex justify-center">
+                  {getDayOfMonth(day)}
+                </div>
               </div>
             </div>
           ))}
