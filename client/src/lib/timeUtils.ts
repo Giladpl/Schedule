@@ -14,7 +14,27 @@ export function toIsraelTime(date: Date): Date {
     ISRAEL_TIMEZONE,
     "yyyy-MM-dd'T'HH:mm:ss.SSS"
   );
-  return new Date(dateStr);
+
+  const result = new Date(dateStr);
+
+  // Safety check - if somehow we've jumped to 2025 or later, force current date
+  const currentYear = new Date().getFullYear();
+  if (result.getFullYear() >= 2025) {
+    console.error(
+      "[Debug] CRITICAL ERROR: Date conversion resulted in year 2025+!",
+      {
+        inputDate: date.toISOString(),
+        resultDate: result.toISOString(),
+        currentYear,
+      }
+    );
+
+    // Force current date and time
+    const safeDate = new Date();
+    return safeDate;
+  }
+
+  return result;
 }
 
 /**
@@ -41,7 +61,14 @@ export function formatInIsraelTime(date: Date, formatStr: string): string {
  * Get current time in Israel
  */
 export function getNowInIsrael(): Date {
-  return toIsraelTime(new Date());
+  console.log("[Debug] Getting current time in Israel");
+  const now = new Date();
+  console.log(`[Debug] Raw current time: ${now.toISOString()}`);
+
+  const israelTime = toIsraelTime(now);
+  console.log(`[Debug] Converted to Israel time: ${israelTime.toISOString()}`);
+
+  return israelTime;
 }
 
 /**

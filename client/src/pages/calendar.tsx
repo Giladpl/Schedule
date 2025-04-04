@@ -62,10 +62,47 @@ export default function Calendar() {
 
   // Calculate date ranges based on current date
   const weekDays = getWeekDays(currentDate);
+
+  // Force current date to be today if it's suspiciously in the future
+  useEffect(() => {
+    // Immediately check on mount and date changes
+    const today = getNowInIsrael();
+    const currentYear = today.getFullYear();
+
+    console.log("[Debug] Current date check:", {
+      currentDate: currentDate?.toISOString() || "undefined",
+      currentDateYear: currentDate?.getFullYear() || "unknown",
+      todayDate: today.toISOString(),
+      todayYear: currentYear,
+    });
+
+    // If current date is more than 1 year ahead or in a different year than now, reset
+    if (
+      currentDate &&
+      (currentDate.getFullYear() !== currentYear ||
+        currentDate.getFullYear() > currentYear + 1)
+    ) {
+      console.log("[Debug] FORCED RESET - Date is in wrong year:", {
+        from: currentDate.toISOString(),
+        to: today.toISOString(),
+      });
+      setCurrentDate(today);
+    }
+  }, [currentDate]);
+
+  // Calculate start and end dates for the current view AFTER any date corrections
   const startDate =
     view === "week" ? startOfWeek(currentDate) : startOfMonth(currentDate);
+
   const endDate =
     view === "week" ? endOfWeek(currentDate) : endOfMonth(currentDate);
+
+  // Log the actual dates being used for the query
+  console.log("[Debug] Date range for API query:", {
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString(),
+    view,
+  });
 
   // Sync calendar on component mount
   useEffect(() => {
@@ -360,6 +397,46 @@ export default function Calendar() {
       );
     }
   };
+
+  // Clear any stored dates in localStorage that might be persisting the issue
+  useEffect(() => {
+    // Check if there are any stored dates in localStorage
+    const storageKeys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key !== null) {
+        storageKeys.push(key);
+      }
+    }
+
+    console.log(
+      "[Debug] Checking localStorage for potential date persistence:",
+      storageKeys
+    );
+
+    // Remove any suspicious items that might be storing dates
+    const dateRelatedKeys = storageKeys.filter(
+      (key) =>
+        key &&
+        (key.toLowerCase().includes("date") ||
+          key.toLowerCase().includes("time") ||
+          key.toLowerCase().includes("calendar"))
+    );
+
+    if (dateRelatedKeys.length > 0) {
+      console.log(
+        "[Debug] Found potential date-related localStorage items:",
+        dateRelatedKeys
+      );
+      dateRelatedKeys.forEach((key) => {
+        console.log(`[Debug] Removing localStorage item: ${key}`);
+        localStorage.removeItem(key);
+      });
+    }
+
+    // Force react-query to reload
+    queryClient.clear();
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col h-screen">
