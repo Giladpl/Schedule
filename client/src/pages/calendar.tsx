@@ -445,10 +445,12 @@ export default function Calendar() {
 
     console.log("Toggle view mode from", currentPath);
 
-    // Use direct window location for reliable navigation
-    if (currentPath === "/admin") {
+    // Check if we're in admin view
+    if (currentPath.includes("admin")) {
+      // If in admin view, go to client view
       window.location.href = "/calendar";
     } else {
+      // If in client view, go to admin view
       window.location.href = "/admin";
     }
   };

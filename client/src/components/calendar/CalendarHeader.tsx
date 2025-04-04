@@ -289,7 +289,7 @@ export default function CalendarHeader({
                     }}
                     className="w-full text-right px-4 py-3 text-sm text-blue-600 hover:bg-blue-50 font-medium block"
                   >
-                    {window.location.pathname === "/admin"
+                    {window.location.pathname.includes("admin")
                       ? "מעבר לתצוגת לקוחות"
                       : "מעבר לתצוגת אדמין"}
                   </button>
