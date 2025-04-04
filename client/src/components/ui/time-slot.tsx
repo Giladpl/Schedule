@@ -2,21 +2,46 @@ import { getClientTypeDisplayName } from "@/lib/calendarService";
 import { cn } from "@/lib/utils";
 import { Timeslot } from "@shared/schema";
 import { Calendar, Clock, Phone, Users, Video } from "lucide-react";
-import React from "react";
+import React, { useMemo } from "react";
 
-// Map client types to colors
+// פונקציה ליצירת צבע עקבי מחרוזת (hash-based)
+function stringToColor(str: string): string {
+  // רשימת צבעים בסיסיים בהירים עם ניגודיות טובה
+  const baseColors = [
+    "#4285F4", // כחול גוגל
+    "#EA4335", // אדום גוגל
+    "#FBBC05", // צהוב גוגל
+    "#34A853", // ירוק גוגל
+    "#8E24AA", // סגול
+    "#0097A7", // טורקיז
+    "#F57C00", // כתום
+    "#C2185B", // ורוד
+    "#7CB342", // ירוק בהיר
+    "#5E35B1", // סגול כהה
+    "#E53935", // אדום בהיר
+    "#43A047", // ירוק בינוני
+    "#1E88E5", // כחול בינוני
+    "#00ACC1", // טורקיז בהיר
+    "#039BE5", // כחול בהיר
+    "#E91E63", // ורוד בהיר
+  ];
+
+  // יצירת hash פשוט מהמחרוזת
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0; // המרה ל-32bit integer
+  }
+
+  // בחירת צבע מהרשימה לפי ה-hash
+  const index = Math.abs(hash) % baseColors.length;
+  return baseColors[index];
+}
+
+// Map client types to colors - מינימלי ומרחיב באופן דינמי
 export const CLIENT_TYPE_COLORS: Record<string, string> = {
-  "מדריכים+": "#fbbc04", // Yellow
-  מדריכים: "#3b82f6", // blue
-  למתקדמים: "#10b981", // emerald
-  למתחילים: "#ef4444", // red
   all: "#6366f1", // indigo
-  vip: "#fbbc04", // Yellow
-  new: "#1a73e8", // Blue
-  quick: "#34a853", // Green
-  "פולי אחים": "#34a853", // Green
   new_customer: "#1a73e8", // Blue
-  default: "#8b5cf6", // violet
 };
 
 // Meeting type to icon mapping
@@ -45,10 +70,14 @@ export function TimeSlot({
   className,
   ...props
 }: TimeSlotProps) {
-  const clientTypeColor =
-    CLIENT_TYPE_COLORS[
-      timeslot.clientType as keyof typeof CLIENT_TYPE_COLORS
-    ] || CLIENT_TYPE_COLORS.default;
+  // בחירת צבע לסוג לקוח - אם לא קיים, צור באופן דינמי
+  const clientTypeColor = useMemo(() => {
+    return (
+      CLIENT_TYPE_COLORS[timeslot.clientType] ||
+      stringToColor(timeslot.clientType)
+    );
+  }, [timeslot.clientType]);
+
   const isAvailable = timeslot.isAvailable;
 
   const startTime = new Date(timeslot.startTime);

@@ -1,9 +1,44 @@
-import { TimeSlot } from "@/components/ui/time-slot";
+import { CLIENT_TYPE_COLORS, TimeSlot } from "@/components/ui/time-slot";
+import { getClientTypeDisplayName } from "@/lib/calendarService";
 import { getNowInIsrael } from "@/lib/timeUtils";
 import { getDayName, getDayOfMonth, isSameDay } from "@/lib/utils";
 import { Timeslot } from "@shared/schema";
 import { Calendar, ChevronDown, Info, Phone, Users, Video } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+
+// פונקציה ליצירת צבע עקבי מחרוזת (hash-based) - מועתק מקומפוננט TimeSlot
+function stringToColor(str: string): string {
+  // רשימת צבעים בסיסיים בהירים עם ניגודיות טובה
+  const baseColors = [
+    "#4285F4", // כחול גוגל
+    "#EA4335", // אדום גוגל
+    "#FBBC05", // צהוב גוגל
+    "#34A853", // ירוק גוגל
+    "#8E24AA", // סגול
+    "#0097A7", // טורקיז
+    "#F57C00", // כתום
+    "#C2185B", // ורוד
+    "#7CB342", // ירוק בהיר
+    "#5E35B1", // סגול כהה
+    "#E53935", // אדום בהיר
+    "#43A047", // ירוק בינוני
+    "#1E88E5", // כחול בינוני
+    "#00ACC1", // טורקיז בהיר
+    "#039BE5", // כחול בהיר
+    "#E91E63", // ורוד בהיר
+  ];
+
+  // יצירת hash פשוט מהמחרוזת
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0; // המרה ל-32bit integer
+  }
+
+  // בחירת צבע מהרשימה לפי ה-hash
+  const index = Math.abs(hash) % baseColors.length;
+  return baseColors[index];
+}
 
 // Meeting type to icon mapping
 const MEETING_TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -176,9 +211,7 @@ function ExpandableTimeslots({
   const clientDisplayNames = clientTypes.map((type) => ({
     type,
     displayName: getClientTypeDisplayName(type),
-    color:
-      CLIENT_TYPE_COLORS[type as keyof typeof CLIENT_TYPE_COLORS] ||
-      CLIENT_TYPE_COLORS.default,
+    color: CLIENT_TYPE_COLORS[type] || stringToColor(type),
   }));
 
   // Collect all unique meeting types
