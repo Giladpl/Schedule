@@ -137,36 +137,6 @@ export default function Calendar() {
         console.log(
           `[Debug] Calendar received ${result.length} timeslots from API`
         );
-        if (result.length === 0) {
-          // If no timeslots returned, try to fetch from debug endpoint
-          console.log(
-            "[Debug] No timeslots found, trying to create sample timeslots"
-          );
-          try {
-            const response = await fetch(
-              "http://localhost:3000/api/debug/create-sample-timeslots"
-            );
-            const debugResult = await response.json();
-            console.log("[Debug] Sample timeslots created:", debugResult);
-
-            // Refetch the timeslots
-            const refreshedResult = await fetchTimeslots(
-              startDate,
-              endDate,
-              clientType,
-              meetingType
-            );
-            console.log(
-              `[Debug] Refreshed: ${refreshedResult.length} timeslots retrieved`
-            );
-            return refreshedResult;
-          } catch (debugError) {
-            console.error(
-              "[Debug] Error creating sample timeslots:",
-              debugError
-            );
-          }
-        }
 
         return result;
       } catch (e) {

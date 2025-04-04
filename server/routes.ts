@@ -61,14 +61,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       console.log("Initial calendar sync completed");
     } catch (error) {
       console.error("Error during initial calendar sync:", error);
-      console.log("Creating sample timeslots instead");
-      await createSampleTimeslots();
     }
   } else {
     console.log(
-      "Google Calendar integration not configured, creating sample timeslots"
+      "Google Calendar integration not configured. No timeslots will be created."
     );
-    await createSampleTimeslots();
   }
 
   // Register API routes
@@ -186,79 +183,6 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
 
         console.log("Found", timeslots.length, "available timeslots");
-
-        // If no timeslots were found, create some sample ones
-        if (timeslots.length === 0) {
-          console.log(
-            "[Debug] No timeslots found, creating samples for requested date range"
-          );
-
-          // Create sample timeslots for each day in the requested range
-          const daysInRange = Math.ceil(
-            (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-          );
-          console.log(
-            `[Debug] Creating sample timeslots for ${daysInRange} days`
-          );
-
-          const createdTimeslots = [];
-          const currentDay = new Date(startDate);
-
-          // For each day in the range
-          for (let dayOffset = 0; dayOffset < daysInRange; dayOffset++) {
-            const dayDate = new Date(currentDay);
-            dayDate.setDate(dayDate.getDate() + dayOffset);
-
-            // Skip past days - only create for today and future
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            if (dayDate < today) {
-              console.log(
-                `[Debug] Skipping past day: ${dayDate.toISOString()}`
-              );
-              continue;
-            }
-
-            // Create 3 timeslots per day (morning, afternoon, evening)
-            const timeSlots = [
-              { start: 9, end: 10 }, // 9-10 AM
-              { start: 13, end: 14 }, // 1-2 PM
-              { start: 17, end: 18 }, // 5-6 PM
-            ];
-
-            for (const slot of timeSlots) {
-              const startTime = new Date(dayDate);
-              startTime.setHours(slot.start, 0, 0, 0);
-
-              const endTime = new Date(dayDate);
-              endTime.setHours(slot.end, 0, 0, 0);
-
-              try {
-                const timeslot = await storage.createTimeslot({
-                  startTime,
-                  endTime,
-                  clientType: (type as string) || "all",
-                  meetingTypes:
-                    (meetingType as string) || "consultation,therapy,coaching",
-                  isAvailable: true,
-                  googleEventId: `sample-event-${dayOffset}-${slot.start}`,
-                  parentEventId: null,
-                });
-
-                createdTimeslots.push(timeslot);
-              } catch (error) {
-                console.error(`[Debug] Error creating sample timeslot:`, error);
-              }
-            }
-          }
-
-          console.log(
-            `[Debug] Created ${createdTimeslots.length} sample timeslots`
-          );
-
-          // Use the newly created timeslots
-          timeslots = createdTimeslots;
-        }
       } else {
         // No date range provided, return all available timeslots
         console.log(
@@ -726,18 +650,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       const hasEvents = await checkForEvents(calendar);
 
       if (!hasEvents) {
-        console.log(
-          "[Debug] No events found in calendar, creating sample timeslots"
-        );
-        await createSampleTimeslots();
-
-        const sampleTimeslots = await storage.getTimeslots();
+        console.log("[Debug] No events found in calendar");
         return res.json({
           success: true,
-          message:
-            "No events found in calendar. Created sample timeslots instead.",
-          timeslotCount: sampleTimeslots.length,
-          usingSampleData: true,
+          message: "No events found in calendar. No timeslots created.",
+          timeslotCount: 0,
+          usingSampleData: false,
         });
       }
 
@@ -863,108 +781,6 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       console.error("Error getting storage stats:", error);
       res.status(500).json({ error: "Failed to get storage stats" });
-    }
-  });
-
-  // Add debug endpoint to create sample timeslots
-  app.get("/api/debug/create-sample-timeslots", async (req, res) => {
-    try {
-      const numSamples = parseInt(req.query.count as string) || 5;
-      console.log(`[Debug] Creating ${numSamples} sample timeslots`);
-
-      // Clear existing timeslots first
-      try {
-        await storage.clearTimeslots();
-        console.log("[Debug] Cleared existing timeslots");
-      } catch (error) {
-        console.error("[Debug] Error clearing timeslots:", error);
-      }
-
-      // Create sample timeslots for today and tomorrow
-      const createdTimeslots = [];
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-      // Create timeslots for today
-      for (let i = 0; i < numSamples; i++) {
-        const startHour = 9 + i;
-        const startTime = new Date(today);
-        startTime.setHours(startHour, 0, 0, 0);
-
-        const endTime = new Date(startTime);
-        endTime.setHours(startHour + 1, 0, 0, 0);
-
-        try {
-          const timeslot = await storage.createTimeslot({
-            startTime,
-            endTime,
-            clientType: "all",
-            meetingTypes: "consultation,therapy,coaching",
-            isAvailable: true,
-            googleEventId: `sample-event-${i}`,
-            parentEventId: null,
-          });
-
-          console.log(
-            `[Debug] Created sample timeslot: ${JSON.stringify(timeslot)}`
-          );
-          createdTimeslots.push(timeslot);
-        } catch (error) {
-          console.error(`[Debug] Error creating sample timeslot ${i}:`, error);
-        }
-      }
-
-      // Create a timeslot for tomorrow
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      try {
-        const tomorrowStartTime = new Date(tomorrow);
-        tomorrowStartTime.setHours(10, 0, 0, 0);
-
-        const tomorrowEndTime = new Date(tomorrowStartTime);
-        tomorrowEndTime.setHours(11, 0, 0, 0);
-
-        const tomorrowTimeslot = await storage.createTimeslot({
-          startTime: tomorrowStartTime,
-          endTime: tomorrowEndTime,
-          clientType: "all",
-          meetingTypes: "consultation,therapy,coaching",
-          isAvailable: true,
-          googleEventId: "sample-event-tomorrow",
-          parentEventId: null,
-        });
-
-        console.log(
-          `[Debug] Created tomorrow timeslot: ${JSON.stringify(
-            tomorrowTimeslot
-          )}`
-        );
-        createdTimeslots.push(tomorrowTimeslot);
-      } catch (error) {
-        console.error(`[Debug] Error creating tomorrow timeslot:`, error);
-      }
-
-      // Verify the timeslots were created
-      const allTimeslots = await storage.getTimeslots();
-      console.log(
-        `[Debug] Total timeslots after creation: ${allTimeslots.length}`
-      );
-
-      // Return success with the created timeslots
-      res.json({
-        success: true,
-        message: `Created ${createdTimeslots.length} sample timeslots`,
-        timeslots: createdTimeslots,
-        allTimeslotsCount: allTimeslots.length,
-      });
-    } catch (error) {
-      console.error("[Debug] Error creating sample timeslots:", error);
-      res.status(500).json({
-        success: false,
-        error: `Failed to create sample timeslots: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      });
     }
   });
 
@@ -1572,214 +1388,6 @@ Meeting Type: ${meetingTypeDisplay}`,
   } catch (error) {
     console.error("Error handling booking in Google Calendar:", error);
     throw error;
-  }
-}
-
-/**
- * Create sample timeslots for testing when Google Calendar is not available
- */
-async function createSampleTimeslots() {
-  try {
-    // Clear all existing timeslots to create new diverse samples
-    const existingTimeslots = await storage.getTimeslots();
-    for (const timeslot of existingTimeslots) {
-      await storage.deleteTimeslot(timeslot.id);
-    }
-    console.log("Cleared existing timeslots to create new diverse samples");
-
-    console.log("Creating diverse sample timeslots for testing");
-
-    // Get available client rules and meeting types
-    const clientRules = await storage.getClientRules();
-    const meetingTypes = await storage.getMeetingTypes();
-
-    console.log(
-      "Available meeting types:",
-      meetingTypes.map((t) => t.name).join(", ")
-    );
-
-    // Create a map of client types to their meeting options
-    interface MeetingOption {
-      meetingType: string;
-      duration: number;
-    }
-
-    const clientMeetingOptions: Record<string, MeetingOption[]> = {};
-
-    // Process client rules to build a mapping of client type to their meeting options
-    for (const rule of clientRules) {
-      if (!rule.isActive) continue;
-
-      if (!clientMeetingOptions[rule.clientType]) {
-        clientMeetingOptions[rule.clientType] = [];
-      }
-
-      clientMeetingOptions[rule.clientType].push({
-        meetingType: rule.allowedTypes,
-        duration: rule.duration,
-      });
-    }
-
-    console.log(
-      "Client meeting options:",
-      JSON.stringify(clientMeetingOptions, null, 2)
-    );
-
-    // If no client rules found, log and return
-    if (Object.keys(clientMeetingOptions).length === 0) {
-      console.log("No client rules found, skipping timeslot creation");
-      return;
-    }
-
-    // Create timeslots for today and next 2 days
-    const now = new Date();
-    const days = [0, 1, 2]; // Today, tomorrow, day after tomorrow
-
-    // Hour blocks to create timeslots for
-    const hourBlocks = [9, 10, 11, 13, 14, 15, 16];
-
-    // For each day
-    for (const dayOffset of days) {
-      const currentDate = new Date(now);
-      currentDate.setDate(currentDate.getDate() + dayOffset);
-
-      // For each hour block
-      for (const hour of hourBlocks) {
-        const hourStart = new Date(currentDate);
-        hourStart.setHours(hour, 0, 0, 0);
-
-        const hourEnd = new Date(hourStart);
-        hourEnd.setHours(hour + 1, 0, 0, 0);
-
-        // Create specific client type slots
-        for (const clientType of Object.keys(clientMeetingOptions)) {
-          if (clientType !== "all") {
-            // For each meeting option this client type has
-            for (const option of clientMeetingOptions[clientType]) {
-              // Calculate how many slots we can fit in an hour
-              const slotsPerHour = Math.floor(60 / option.duration);
-
-              for (let slotIndex = 0; slotIndex < slotsPerHour; slotIndex++) {
-                const slotStart = new Date(hourStart);
-                slotStart.setMinutes(
-                  slotStart.getMinutes() + slotIndex * option.duration
-                );
-
-                const slotEnd = new Date(slotStart);
-                slotEnd.setMinutes(slotStart.getMinutes() + option.duration);
-
-                // Only create if within the hour
-                if (slotEnd <= hourEnd) {
-                  await storage.createTimeslot({
-                    startTime: slotStart,
-                    endTime: slotEnd,
-                    clientType,
-                    meetingTypes: option.meetingType,
-                    isAvailable: true,
-                    googleEventId: null,
-                    parentEventId: null,
-                  });
-                }
-              }
-            }
-          }
-        }
-
-        // For "all" client type (side by side different meeting types)
-        if (clientMeetingOptions["all"]) {
-          // Create a special demonstration hour with side-by-side options (13-14)
-          if (hour === 13) {
-            // Create time slots with multiple meeting types in the same slot
-            // Special time slot with all three meeting types for the 1-2 PM hour
-            await storage.createTimeslot({
-              startTime: new Date(hourStart),
-              endTime: new Date(hourEnd),
-              clientType: "all",
-              meetingTypes: "טלפון,זום,פגישה", // All three meeting types in one slot
-              isAvailable: true,
-              googleEventId: null,
-              parentEventId: null,
-            });
-
-            // Create specialized time slots for VIP clients with two meeting types
-            await storage.createTimeslot({
-              startTime: new Date(hourStart),
-              endTime: new Date(hourEnd),
-              clientType: "vip",
-              meetingTypes: "זום,פגישה", // Multiple meeting types
-              isAvailable: true,
-              googleEventId: null,
-              parentEventId: null,
-            });
-
-            // Create slots for other client types with multiple options
-            const halfHourPoint = new Date(hourStart);
-            halfHourPoint.setMinutes(halfHourPoint.getMinutes() + 30);
-
-            await storage.createTimeslot({
-              startTime: new Date(hourStart),
-              endTime: new Date(halfHourPoint),
-              clientType: "new_customer",
-              meetingTypes: "טלפון,זום", // Two meeting types
-              isAvailable: true,
-              googleEventId: null,
-              parentEventId: null,
-            });
-
-            // Create a slot for "פולי אחים" client type with phone and in-person options
-            await storage.createTimeslot({
-              startTime: new Date(halfHourPoint),
-              endTime: new Date(hourEnd),
-              clientType: "פולי אחים",
-              meetingTypes: "טלפון,פגישה", // Two meeting types
-              isAvailable: true,
-              googleEventId: null,
-              parentEventId: null,
-            });
-          } else {
-            // For other hours, use a simpler pattern
-            // Use a mix of meeting types
-            const allOptions = clientMeetingOptions["all"];
-
-            // Alternate between meeting types based on hour
-            const optionIndex = hour % allOptions.length;
-            const option = allOptions[optionIndex];
-
-            // Calculate how many slots we can fit in an hour
-            const slotsPerHour = Math.floor(60 / option.duration);
-
-            for (let slotIndex = 0; slotIndex < slotsPerHour; slotIndex++) {
-              const slotStart = new Date(hourStart);
-              slotStart.setMinutes(
-                slotStart.getMinutes() + slotIndex * option.duration
-              );
-
-              const slotEnd = new Date(slotStart);
-              slotEnd.setMinutes(slotStart.getMinutes() + option.duration);
-
-              // Only create if within the hour
-              if (slotEnd <= hourEnd) {
-                await storage.createTimeslot({
-                  startTime: slotStart,
-                  endTime: slotEnd,
-                  clientType: "all",
-                  meetingTypes: option.meetingType,
-                  isAvailable: true,
-                  googleEventId: null,
-                  parentEventId: null,
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-
-    console.log(
-      "Sample timeslots created successfully with diverse meeting types and durations"
-    );
-  } catch (error) {
-    console.error("Error creating sample timeslots:", error);
   }
 }
 
