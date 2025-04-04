@@ -628,22 +628,55 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   app.get("/api/sync-calendar", async (req, res) => {
-    console.log("Received calendar sync request");
-    if (!calendar) {
-      console.log("Calendar API not configured, returning error");
-      return res
-        .status(500)
-        .json({ error: "Google Calendar API not configured" });
-    }
-
+    console.log("[Debug] /api/sync-calendar endpoint hit");
     try {
+      if (!calendar) {
+        console.log("No calendar client available");
+        return res.status(500).json({
+          error: "Google Calendar client not available",
+          success: false,
+        });
+      }
+
       console.log("Starting calendar sync...");
-      await syncWithGoogleCalendar(calendar);
-      console.log("Calendar sync completed successfully");
-      res.json({ message: "Calendar sync completed successfully" });
+      const result = await syncWithGoogleCalendar(calendar);
+      console.log("Calendar sync completed");
+
+      // Count timeslots after sync for debugging
+      const timeslots = await storage.getTimeslots();
+      console.log(
+        `[Debug] After sync: total timeslots in storage: ${timeslots.length}`
+      );
+
+      // Print date range of available timeslots
+      if (timeslots.length > 0) {
+        const orderedTimeslots = [...timeslots].sort(
+          (a, b) =>
+            new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+        );
+
+        const firstDate = new Date(orderedTimeslots[0].startTime);
+        const lastDate = new Date(
+          orderedTimeslots[orderedTimeslots.length - 1].endTime
+        );
+
+        console.log(
+          `[Debug] Timeslots available from ${firstDate.toISOString()} to ${lastDate.toISOString()}`
+        );
+      }
+
+      return res.json({
+        message: "Calendar synchronized successfully",
+        success: true,
+        timeslotsCount: timeslots.length,
+      });
     } catch (error) {
-      console.error("Error during calendar sync:", error);
-      res.status(500).json({ error: "Failed to sync with Google Calendar" });
+      console.error("Error syncing calendar:", error);
+      return res.status(500).json({
+        error: "Failed to sync calendar",
+        details: error instanceof Error ? error.message : String(error),
+        success: false,
+      });
     }
   });
 
@@ -1051,220 +1084,93 @@ async function createDefaultMeetingTypes() {
   }
 }
 
-// Sync timeslots from Google Calendar
-async function syncWithGoogleCalendar(calendar: calendar_v3.Calendar) {
+// Sync with Google Calendar
+async function syncWithGoogleCalendar(
+  calendarClient: calendar_v3.Calendar
+): Promise<void> {
   try {
-    const calendarId = process.env.GOOGLE_CALENDAR_ID;
-    console.log("Calendar sync starting with ID:", calendarId);
+    console.log("[Debug] Starting calendar sync");
 
-    if (!calendarId) {
-      console.log("No GOOGLE_CALENDAR_ID found in environment variables");
-      console.log("Creating sample timeslots instead...");
-      await createSampleTimeslots();
-      return;
-    }
-
-    if (!calendar) {
-      console.log("Google Calendar client not initialized");
-      console.log("Creating sample timeslots instead...");
-      await createSampleTimeslots();
-      return;
-    }
-
-    console.log("Starting Google Calendar sync with calendar ID:", calendarId);
-
-    // Get events for the next two weeks
+    // Get events for the next three months instead of just two weeks
     const now = new Date();
-    const twoWeeksLater = new Date(now);
-    twoWeeksLater.setDate(now.getDate() + 14);
+    const threeMonthsLater = new Date(now);
+    threeMonthsLater.setMonth(now.getMonth() + 3);
 
     console.log(
-      "Fetching events from",
-      now.toISOString(),
-      "to",
-      twoWeeksLater.toISOString()
+      `[Debug] Fetching events from ${now.toISOString()} to ${threeMonthsLater.toISOString()}`
     );
 
-    try {
-      // Add timeout to the calendar API call
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(
-          () => reject(new Error("Calendar API request timed out")),
-          10000
-        );
-      });
+    const response = await calendarClient.events.list({
+      calendarId: process.env.GOOGLE_CALENDAR_ID!,
+      timeMin: now.toISOString(),
+      timeMax: threeMonthsLater.toISOString(),
+      singleEvents: true,
+      orderBy: "startTime",
+    });
 
-      console.log("Making calendar.events.list API call...");
-      const responsePromise = calendar.events.list({
-        calendarId,
-        timeMin: now.toISOString(),
-        timeMax: twoWeeksLater.toISOString(),
-        singleEvents: true,
-        orderBy: "startTime",
-      });
+    const events = response.data.items || [];
+    console.log(
+      `[Debug] Retrieved ${events.length} events from Google Calendar`
+    );
 
-      console.log("Waiting for calendar API response...");
-      const response = (await Promise.race([
-        responsePromise,
-        timeoutPromise,
-      ])) as Awaited<typeof responsePromise>;
-      console.log("Successfully fetched calendar events");
+    // Clear existing timeslots before sync to prevent duplicates
+    await storage.clearTimeslots();
+    console.log("[Debug] Cleared existing timeslots");
 
-      const events = response.data.items || [];
-      console.log(`Found ${events.length} calendar events`);
+    let convertedCount = 0;
+    let errorCount = 0;
 
-      if (events.length === 0) {
-        console.log(
-          "No events found in calendar, creating sample timeslots..."
-        );
-        await createSampleTimeslots();
-        return;
-      }
-
-      // Get available client rules from sheet
-      const availableClientRules = await storage.getClientRules();
-      console.log(
-        `Processing events with ${availableClientRules.length} client rules`
-      );
-
-      // Process each event and create timeslots
-      for (const event of events) {
-        try {
-          console.log("Processing event:", event.id, event.summary);
-
-          // Skip events that are already booked
-          if (event.summary && event.summary.includes("BOOKED")) {
-            console.log("Skipping booked event:", event.id);
-            continue;
-          }
-
-          // Skip if no description
-          if (!event.description) {
-            console.log(`Skipping event with no description: ${event.id}`);
-            continue;
-          }
-
-          // Look for meeting types in description
-          const eventDesc = event.description;
-          console.log("Event description:", eventDesc);
-
-          const meetingTypes: string[] = [];
-
-          // Get unique meeting types from client rules
-          const uniqueMeetingTypes = new Set<string>();
-          availableClientRules.forEach((rule) => {
-            rule.allowedTypes.split(",").forEach((type) => {
-              uniqueMeetingTypes.add(type.trim());
-            });
-          });
-
+    // Process each event
+    for (const event of events) {
+      try {
+        if (!event.start?.dateTime || !event.end?.dateTime) {
           console.log(
-            "Available meeting types:",
-            Array.from(uniqueMeetingTypes)
+            `[Debug] Skipping event without dateTime: ${event.summary}`
           );
-
-          // Map common English terms to Hebrew meeting types
-          const meetingTypeMap: Record<string, string> = {
-            phone: "טלפון",
-            zoom: "זום",
-            meeting: "פגישה",
-            "in-person": "פגישה",
-            פגישה: "פגישה",
-            טלפון: "טלפון",
-            זום: "זום",
-          };
-
-          // Check for meeting types in description (case insensitive)
-          const descriptionLower = eventDesc.toLowerCase();
-          Object.entries(meetingTypeMap).forEach(([term, hebrewType]) => {
-            if (descriptionLower.includes(term.toLowerCase())) {
-              if (Array.from(uniqueMeetingTypes).includes(hebrewType)) {
-                meetingTypes.push(hebrewType);
-                console.log(
-                  `Found meeting type in description: ${term} -> ${hebrewType}`
-                );
-              }
-            }
-          });
-
-          if (meetingTypes.length === 0) {
-            console.log(
-              `No valid meeting types found in description: ${eventDesc}`
-            );
-            continue;
-          }
-
-          // Skip event if it doesn't have valid start/end times
-          if (!event.start?.dateTime || !event.end?.dateTime) {
-            console.log(`Skipping event with invalid dates: ${event.id}`);
-            continue;
-          }
-
-          console.log(
-            `Creating timeslots for event ${event.id} with types:`,
-            meetingTypes
-          );
-
-          // Create a timeslot for each client type that has matching meeting types
-          for (const rule of availableClientRules) {
-            const ruleTypes = rule.allowedTypes.split(",").map((t) => t.trim());
-            const matchingTypes = meetingTypes.filter((type) =>
-              ruleTypes.includes(type)
-            );
-
-            if (matchingTypes.length > 0) {
-              // Create timeslot for this client type
-              const timeslotData = {
-                startTime: new Date(event.start.dateTime),
-                endTime: new Date(event.end.dateTime),
-                clientType: rule.clientType,
-                meetingTypes: matchingTypes.join(","),
-                isAvailable: true,
-                googleEventId: event.id || null,
-                parentEventId: null,
-              };
-
-              await storage.createTimeslot(timeslotData);
-              console.log(
-                `Created timeslot for ${
-                  rule.clientType
-                } with types: ${matchingTypes.join(",")}`
-              );
-            }
-          }
-        } catch (eventError) {
-          console.error(`Error processing event ${event.id}:`, eventError);
-          // Continue with next event
+          continue;
         }
-      }
-      console.log("Calendar sync completed successfully");
-    } catch (error: any) {
-      console.error("Calendar API error:", error);
-      if (error?.code === 403) {
+
+        // Get client type and allowed meeting types from event description or summary
+        const clientType = extractClientType(event);
+        const meetingTypes = extractMeetingTypes(event);
+
         console.log(
-          "Full error response:",
-          JSON.stringify(error.response?.data || {}, null, 2)
+          `[Debug] Processing event: ${event.summary}, Client: ${clientType}, Meeting types: ${meetingTypes}`
         );
+
+        // Create a timeslot from the event
+        await storage.createTimeslot({
+          startTime: new Date(event.start.dateTime),
+          endTime: new Date(event.end.dateTime),
+          clientType,
+          meetingTypes,
+          isAvailable: true,
+          googleEventId: event.id || null,
+          parentEventId: null,
+        });
+
+        convertedCount++;
+      } catch (error) {
+        console.error(`[Debug] Error processing event ${event.id}: ${error}`);
+        errorCount++;
       }
-      if (
-        error?.code === 403 &&
-        error?.errors?.[0]?.reason === "accessNotConfigured"
-      ) {
-        console.log(
-          "Google Calendar API is not enabled. Please enable it in the Google Cloud Console."
-        );
-        return;
-      }
-      if (error.message === "Calendar API request timed out") {
-        console.error("Calendar sync timed out, continuing without sync");
-        return;
-      }
-      console.error("Error during calendar sync:", error);
-      throw error;
+    }
+
+    console.log(
+      `[Debug] Calendar sync completed. Converted: ${convertedCount}, Errors: ${errorCount}`
+    );
+
+    // Verify timeslots after sync
+    const timeslots = await storage.getTimeslots();
+    console.log(`[Debug] Total timeslots after sync: ${timeslots.length}`);
+
+    if (timeslots.length > 0) {
+      const firstTimeslot = timeslots[0];
+      console.log(`[Debug] First timeslot: ${JSON.stringify(firstTimeslot)}`);
     }
   } catch (error) {
-    console.error("Error in calendar sync:", error);
-    console.log("Continuing without Google Calendar integration");
+    console.error("[Debug] Error in syncWithGoogleCalendar:", error);
+    throw error;
   }
 }
 
@@ -1595,3 +1501,79 @@ async function createSampleTimeslots() {
     console.error("Error creating sample timeslots:", error);
   }
 }
+
+// Helper function to extract client type from event
+function extractClientType(event: calendar_v3.Schema$Event): string {
+  // Default to 'all' if we can't determine the client type
+  let clientType = "all";
+
+  // Check description first
+  if (event.description) {
+    const descLower = event.description.toLowerCase();
+    if (descLower.includes("עסקי") || descLower.includes("business")) {
+      return "עסקי";
+    }
+    if (descLower.includes("פרטי") || descLower.includes("private")) {
+      return "פרטי";
+    }
+  }
+
+  // Then check summary
+  if (event.summary) {
+    const summaryLower = event.summary.toLowerCase();
+    if (summaryLower.includes("עסקי") || summaryLower.includes("business")) {
+      return "עסקי";
+    }
+    if (summaryLower.includes("פרטי") || summaryLower.includes("private")) {
+      return "פרטי";
+    }
+  }
+
+  return clientType;
+}
+
+// Helper function to extract meeting types from event
+function extractMeetingTypes(event: calendar_v3.Schema$Event): string {
+  const meetingTypes: string[] = [];
+
+  // Check in both description and summary
+  const textToCheck = [event.description || "", event.summary || ""]
+    .join(" ")
+    .toLowerCase();
+
+  // Map of keywords to meeting types
+  const typeMap: Record<string, string> = {
+    טלפון: "טלפון",
+    phone: "טלפון",
+    call: "טלפון",
+    זום: "זום",
+    zoom: "זום",
+    video: "זום",
+    פגישה: "פגישה",
+    meeting: "פגישה",
+    "in-person": "פגישה",
+    face: "פגישה",
+  };
+
+  // Check for each keyword
+  Object.entries(typeMap).forEach(([keyword, meetingType]) => {
+    if (textToCheck.includes(keyword)) {
+      meetingTypes.push(meetingType);
+    }
+  });
+
+  // If no types found, allow all types
+  if (meetingTypes.length === 0) {
+    return "טלפון,זום,פגישה";
+  }
+
+  return meetingTypes
+    .filter((value, index, self) => self.indexOf(value) === index)
+    .join(",");
+}
+
+// Add clearTimeslots method to storage
+storage.clearTimeslots = async function (): Promise<void> {
+  console.log("[Debug] Clearing all timeslots from storage");
+  this.timeslots = [];
+};
