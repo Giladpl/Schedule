@@ -182,19 +182,27 @@ export default function Calendar() {
     const normalizedToday = new Date(today);
     normalizedToday.setHours(0, 0, 0, 0);
 
+    // Get today's week start
+    const todayWeekStart = startOfWeek(normalizedToday);
+
     if (view === "week") {
-      // Use startOfWeek for consistent comparison
+      // Get current view's week start
       const currentWeekStart = startOfWeek(currentDate);
       const previousWeekStart = addDays(currentWeekStart, -7);
 
-      // If previous week's start date is before today, go to the week containing today
-      if (previousWeekStart < normalizedToday) {
-        setCurrentDate(today);
+      // If going back would take us before today's week, go to today's week
+      if (previousWeekStart < todayWeekStart) {
+        setCurrentDate(todayWeekStart);
       } else {
         setCurrentDate(previousWeekStart);
       }
     } else {
-      // For month view - use first day of months for proper comparison
+      // For month view
+      const currentMonthStart = new Date(
+        currentDate.getFullYear(),
+        currentDate.getMonth(),
+        1
+      );
       const prevMonthStart = new Date(
         currentDate.getFullYear(),
         currentDate.getMonth() - 1,
@@ -208,7 +216,7 @@ export default function Calendar() {
 
       // If previous month is before current month (containing today), go to current month
       if (prevMonthStart < todayMonthStart) {
-        setCurrentDate(today);
+        setCurrentDate(todayMonthStart);
       } else {
         setCurrentDate(prevMonthStart);
       }
@@ -273,32 +281,35 @@ export default function Calendar() {
     const normalizedToday = new Date(today);
     normalizedToday.setHours(0, 0, 0, 0);
 
+    // Get today's week start (the week that contains today)
+    const todayWeekStart = startOfWeek(normalizedToday);
+
     if (view === "week") {
-      // Use startOfWeek for consistent comparison
+      // Get current view's week start
       const currentWeekStart = startOfWeek(currentDate);
-      const previousWeekStart = addDays(currentWeekStart, -7);
+
+      // If the current week view is already showing today's week or earlier, disable
+      // We compare day, month, and year to ignore time
+      const sameWeek =
+        currentWeekStart.getDate() === todayWeekStart.getDate() &&
+        currentWeekStart.getMonth() === todayWeekStart.getMonth() &&
+        currentWeekStart.getFullYear() === todayWeekStart.getFullYear();
 
       // For debugging
-      console.log("Previous navigation check:", {
-        currentDate: currentDate.toISOString(),
+      console.log("Previous navigation check (week):", {
+        todayWeekStart: todayWeekStart.toISOString(),
         currentWeekStart: currentWeekStart.toISOString(),
-        previousWeekStart: previousWeekStart.toISOString(),
-        today: normalizedToday.toISOString(),
-        wouldBeDisabled: previousWeekStart < normalizedToday,
+        sameWeek,
+        isDisabled: sameWeek || currentWeekStart < todayWeekStart,
       });
 
-      // Disable if previous week would start before today
-      return previousWeekStart < normalizedToday;
+      // Disable if we're on today's week OR earlier
+      return sameWeek || currentWeekStart < todayWeekStart;
     } else {
-      // For month view - get first day of months for proper comparison
+      // For month view - get first day of months
       const currentMonthStart = new Date(
         currentDate.getFullYear(),
         currentDate.getMonth(),
-        1
-      );
-      const prevMonthStart = new Date(
-        currentDate.getFullYear(),
-        currentDate.getMonth() - 1,
         1
       );
       const todayMonthStart = new Date(
@@ -308,16 +319,25 @@ export default function Calendar() {
       );
 
       // For debugging
-      console.log("Previous navigation check:", {
-        currentDate: currentDate.toISOString(),
-        currentMonthStart: currentMonthStart.toISOString(),
-        prevMonthStart: prevMonthStart.toISOString(),
+      console.log("Previous navigation check (month):", {
         todayMonthStart: todayMonthStart.toISOString(),
-        wouldBeDisabled: prevMonthStart < todayMonthStart,
+        currentMonthStart: currentMonthStart.toISOString(),
+        sameMonth:
+          currentMonthStart.getMonth() === todayMonthStart.getMonth() &&
+          currentMonthStart.getFullYear() === todayMonthStart.getFullYear(),
+        isDisabled:
+          (currentMonthStart.getMonth() === todayMonthStart.getMonth() &&
+            currentMonthStart.getFullYear() ===
+              todayMonthStart.getFullYear()) ||
+          currentMonthStart < todayMonthStart,
       });
 
-      // Disable if previous month would be before current month containing today
-      return prevMonthStart < todayMonthStart;
+      // Disable if we're on today's month OR earlier
+      return (
+        (currentMonthStart.getMonth() === todayMonthStart.getMonth() &&
+          currentMonthStart.getFullYear() === todayMonthStart.getFullYear()) ||
+        currentMonthStart < todayMonthStart
+      );
     }
   };
 
