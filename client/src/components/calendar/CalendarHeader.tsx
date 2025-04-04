@@ -233,7 +233,7 @@ export default function CalendarHeader({
 
             {settingsOpen && (
               <div
-                className="absolute top-full right-0 mt-1 w-64 bg-white rounded-md shadow-lg border border-gray-200"
+                className="fixed top-[60px] right-6 mt-1 w-64 bg-white rounded-md shadow-lg border border-gray-200"
                 style={{ zIndex: 9999 }}
               >
                 <ul className="py-1">
