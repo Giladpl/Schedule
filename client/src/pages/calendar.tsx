@@ -33,12 +33,8 @@ export default function Calendar() {
   const searchParams = new URLSearchParams(window.location.search);
   const { toast } = useToast();
 
-  // States
-  const [currentDate, setCurrentDate] = useState<Date>(() => {
-    // Force reset to current date - clear any hardcoded dates
-    console.log("[Debug] Initializing calendar with current date");
-    return getNowInIsrael();
-  });
+  // States - initialize with today's date
+  const [currentDate, setCurrentDate] = useState<Date>(getNowInIsrael());
   const [view, setView] = useState<"week" | "month">("week");
   const [selectedTimeslot, setSelectedTimeslot] = useState<Timeslot | null>(
     null
@@ -56,53 +52,16 @@ export default function Calendar() {
     searchParams.get("type") || "all"
   );
   const [meetingType, setMeetingType] = useState<string>("all");
-
-  // Add state to track sync status
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Calculate date ranges based on current date
   const weekDays = getWeekDays(currentDate);
 
-  // Force current date to be today if it's suspiciously in the future
-  useEffect(() => {
-    // Immediately check on mount and date changes
-    const today = getNowInIsrael();
-    const currentYear = today.getFullYear();
-
-    console.log("[Debug] Current date check:", {
-      currentDate: currentDate?.toISOString() || "undefined",
-      currentDateYear: currentDate?.getFullYear() || "unknown",
-      todayDate: today.toISOString(),
-      todayYear: currentYear,
-    });
-
-    // If current date is more than 1 year ahead or in a different year than now, reset
-    if (
-      currentDate &&
-      (currentDate.getFullYear() !== currentYear ||
-        currentDate.getFullYear() > currentYear + 1)
-    ) {
-      console.log("[Debug] FORCED RESET - Date is in wrong year:", {
-        from: currentDate.toISOString(),
-        to: today.toISOString(),
-      });
-      setCurrentDate(today);
-    }
-  }, [currentDate]);
-
-  // Calculate start and end dates for the current view AFTER any date corrections
+  // Calculate start and end dates for the current view
   const startDate =
     view === "week" ? startOfWeek(currentDate) : startOfMonth(currentDate);
-
   const endDate =
     view === "week" ? endOfWeek(currentDate) : endOfMonth(currentDate);
-
-  // Log the actual dates being used for the query
-  console.log("[Debug] Date range for API query:", {
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString(),
-    view,
-  });
 
   // Sync calendar on component mount
   useEffect(() => {
@@ -127,7 +86,7 @@ export default function Calendar() {
     syncGoogleCalendar();
   }, [toast]);
 
-  // Modify the fetchTimeslots to wait for sync to complete
+  // Fetch timeslots
   const {
     data: timeslots = [],
     isLoading,
@@ -159,21 +118,15 @@ export default function Calendar() {
       }
 
       try {
-        console.log("[Debug] Executing fetchTimeslots in queryFn");
         const result = await fetchTimeslots(
           startDate,
           endDate,
           clientType,
           meetingType
         );
-        console.log(
-          "[Debug] fetchTimeslots completed with",
-          result.length,
-          "results"
-        );
         return result;
       } catch (e) {
-        console.error("[Debug] Error in timeslots queryFn:", e);
+        console.error("Error fetching timeslots:", e);
         return []; // Return empty array on error to prevent perpetual loading
       }
     },
@@ -182,12 +135,10 @@ export default function Calendar() {
     retry: 1, // Only retry once on failure
   });
 
-  // Add error handling for the error from useQuery
+  // Error handling
   useEffect(() => {
     if (error) {
-      console.error("[Debug] Error from React Query:", error);
-
-      // Display error toast to user
+      console.error("Error from React Query:", error);
       toast({
         title: "Error Loading Calendar",
         description:
@@ -202,9 +153,8 @@ export default function Calendar() {
     let timeoutId: NodeJS.Timeout | null = null;
 
     if (isLoading) {
-      console.log("[Debug] Setting loading timeout failsafe");
       timeoutId = setTimeout(() => {
-        console.log("[Debug] Loading timed out - forcing content display");
+        console.log("Loading timed out - forcing content display");
         queryClient.setQueryData(
           [
             "timeslots",
@@ -225,68 +175,57 @@ export default function Calendar() {
     };
   }, [isLoading, startDate, endDate, clientType, meetingType]);
 
+  // Refetch timeslots when synchronization completes
+  useEffect(() => {
+    if (!isSyncing && timeslots.length === 0) {
+      refetch();
+    }
+  }, [isSyncing, timeslots.length, refetch]);
+
   // Create booking mutation
-  const { mutate, isPending } = useMutation({
-    mutationFn: createBooking,
-    onSuccess: (data, variables) => {
+  const { mutate, isPending: isBooking } = useMutation({
+    mutationFn: async (formData: z.infer<typeof bookingFormSchema>) => {
+      if (!selectedTimeslot) {
+        throw new Error("No timeslot selected");
+      }
+
+      // Store booking details for confirmation
       setBookingDetails({
-        name: variables.name,
-        email: variables.email,
-        phone: variables.phone,
-        meetingType: variables.meetingType,
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        meetingType: formData.meetingType,
       });
+
+      // Find meeting type duration
+      let duration = 30; // Default duration
+      const meetingType = formData.meetingType || "consultation";
+
+      // Create the booking with the correct type
+      return createBooking({
+        ...formData,
+        timeslotId: selectedTimeslot.id,
+        duration,
+        meetingType,
+      });
+    },
+    onSuccess: () => {
       setBookingModalOpen(false);
       setConfirmationModalOpen(true);
       queryClient.invalidateQueries({ queryKey: ["timeslots"] });
     },
     onError: (error) => {
+      console.error("Booking error:", error);
       toast({
         title: "Booking Failed",
         description:
-          error instanceof Error ? error.message : "Failed to create booking.",
+          "There was an error creating your booking. Please try again.",
         variant: "destructive",
       });
     },
   });
 
-  // Add a useEffect to log when timeslots change
-  useEffect(() => {
-    console.log(
-      `[Debug] Timeslots data updated: ${timeslots.length} timeslots found`
-    );
-    if (timeslots.length === 0) {
-      console.log("[Debug] No timeslots returned. Check server response.");
-    }
-  }, [timeslots]);
-
-  // Add another useEffect to manually refetch when necessary
-  useEffect(() => {
-    if (!isSyncing && timeslots.length === 0) {
-      console.log("[Debug] Manually triggering timeslot refetch");
-      refetch();
-    }
-  }, [isSyncing, timeslots.length, refetch]);
-
-  // Reset date to today if we detect a date too far in the future (1 year+)
-  useEffect(() => {
-    const today = getNowInIsrael();
-    const oneYearFromNow = new Date(today);
-    oneYearFromNow.setFullYear(today.getFullYear() + 1);
-
-    // If current date is more than a year in the future, reset to today
-    if (currentDate > oneYearFromNow) {
-      console.log(
-        "[Debug] Detected date too far in future, resetting to today:",
-        {
-          current: currentDate.toISOString(),
-          resetTo: today.toISOString(),
-        }
-      );
-      setCurrentDate(today);
-    }
-  }, [currentDate]);
-
-  // Handle navigation
+  // Navigation functions
   const goToNextPeriod = () => {
     if (view === "week") {
       setCurrentDate(addDays(currentDate, 7));
@@ -299,17 +238,11 @@ export default function Calendar() {
 
   const goToPreviousPeriod = () => {
     const today = getNowInIsrael();
-    // Normalize today to start of day
-    const normalizedToday = new Date(today);
-    normalizedToday.setHours(0, 0, 0, 0);
-
-    // Get today's week start
-    const todayWeekStart = startOfWeek(normalizedToday);
 
     if (view === "week") {
-      // Get current view's week start
       const currentWeekStart = startOfWeek(currentDate);
       const previousWeekStart = addDays(currentWeekStart, -7);
+      const todayWeekStart = startOfWeek(today);
 
       // If going back would take us before today's week, go to today's week
       if (previousWeekStart < todayWeekStart) {
@@ -348,6 +281,43 @@ export default function Calendar() {
     setCurrentDate(getNowInIsrael());
   };
 
+  // Check if previous navigation should be disabled
+  const isPreviousDisabled = () => {
+    const today = getNowInIsrael();
+
+    if (view === "week") {
+      const currentWeekStart = startOfWeek(currentDate);
+      const todayWeekStart = startOfWeek(today);
+
+      // If current week start is the same as today's week start or earlier, disable
+      return (
+        (currentWeekStart.getDate() === todayWeekStart.getDate() &&
+          currentWeekStart.getMonth() === todayWeekStart.getMonth() &&
+          currentWeekStart.getFullYear() === todayWeekStart.getFullYear()) ||
+        currentWeekStart < todayWeekStart
+      );
+    } else {
+      // For month view - compare just the month and year
+      const currentMonthStart = new Date(
+        currentDate.getFullYear(),
+        currentDate.getMonth(),
+        1
+      );
+      const todayMonthStart = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        1
+      );
+
+      // If current month is the same as today's month or earlier, disable
+      return (
+        (currentMonthStart.getMonth() === todayMonthStart.getMonth() &&
+          currentMonthStart.getFullYear() === todayMonthStart.getFullYear()) ||
+        currentMonthStart < todayMonthStart
+      );
+    }
+  };
+
   // Handle timeslot selection
   const handleSelectTimeslot = (timeslot: Timeslot) => {
     setSelectedTimeslot(timeslot);
@@ -362,7 +332,6 @@ export default function Calendar() {
 
   // Handle form submission
   const handleBookingSubmit = (formData: z.infer<typeof bookingFormSchema>) => {
-    // Duration will be determined by the meeting type from the form
     mutate(formData);
   };
 
@@ -383,127 +352,8 @@ export default function Calendar() {
     setMeetingType(value);
   };
 
-  // URL parameter handling
-  useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-    const urlClientType = searchParams.get("type");
-
-    if (urlClientType) {
-      setClientType(urlClientType);
-    } else if (!urlClientType && clientType !== "all") {
-      setClientType("all");
-    }
-  }, [location]);
-
-  // Calculate whether the previous button should be disabled (can't go back before today)
-  const isPreviousDisabled = (): boolean => {
-    const today = getNowInIsrael();
-    // Normalize today to start of day
-    const normalizedToday = new Date(today);
-    normalizedToday.setHours(0, 0, 0, 0);
-
-    // Get today's week start (the week that contains today)
-    const todayWeekStart = startOfWeek(normalizedToday);
-
-    if (view === "week") {
-      // Get current view's week start
-      const currentWeekStart = startOfWeek(currentDate);
-
-      // If the current week view is already showing today's week or earlier, disable
-      // We compare day, month, and year to ignore time
-      const sameWeek =
-        currentWeekStart.getDate() === todayWeekStart.getDate() &&
-        currentWeekStart.getMonth() === todayWeekStart.getMonth() &&
-        currentWeekStart.getFullYear() === todayWeekStart.getFullYear();
-
-      // For debugging
-      console.log("Previous navigation check (week):", {
-        todayWeekStart: todayWeekStart.toISOString(),
-        currentWeekStart: currentWeekStart.toISOString(),
-        sameWeek,
-        isDisabled: sameWeek || currentWeekStart < todayWeekStart,
-      });
-
-      // Disable if we're on today's week OR earlier
-      return sameWeek || currentWeekStart < todayWeekStart;
-    } else {
-      // For month view - get first day of months
-      const currentMonthStart = new Date(
-        currentDate.getFullYear(),
-        currentDate.getMonth(),
-        1
-      );
-      const todayMonthStart = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        1
-      );
-
-      // For debugging
-      console.log("Previous navigation check (month):", {
-        todayMonthStart: todayMonthStart.toISOString(),
-        currentMonthStart: currentMonthStart.toISOString(),
-        sameMonth:
-          currentMonthStart.getMonth() === todayMonthStart.getMonth() &&
-          currentMonthStart.getFullYear() === todayMonthStart.getFullYear(),
-        isDisabled:
-          (currentMonthStart.getMonth() === todayMonthStart.getMonth() &&
-            currentMonthStart.getFullYear() ===
-              todayMonthStart.getFullYear()) ||
-          currentMonthStart < todayMonthStart,
-      });
-
-      // Disable if we're on today's month OR earlier
-      return (
-        (currentMonthStart.getMonth() === todayMonthStart.getMonth() &&
-          currentMonthStart.getFullYear() === todayMonthStart.getFullYear()) ||
-        currentMonthStart < todayMonthStart
-      );
-    }
-  };
-
-  // Clear any stored dates in localStorage that might be persisting the issue
-  useEffect(() => {
-    // Check if there are any stored dates in localStorage
-    const storageKeys: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key !== null) {
-        storageKeys.push(key);
-      }
-    }
-
-    console.log(
-      "[Debug] Checking localStorage for potential date persistence:",
-      storageKeys
-    );
-
-    // Remove any suspicious items that might be storing dates
-    const dateRelatedKeys = storageKeys.filter(
-      (key) =>
-        key &&
-        (key.toLowerCase().includes("date") ||
-          key.toLowerCase().includes("time") ||
-          key.toLowerCase().includes("calendar"))
-    );
-
-    if (dateRelatedKeys.length > 0) {
-      console.log(
-        "[Debug] Found potential date-related localStorage items:",
-        dateRelatedKeys
-      );
-      dateRelatedKeys.forEach((key) => {
-        console.log(`[Debug] Removing localStorage item: ${key}`);
-        localStorage.removeItem(key);
-      });
-    }
-
-    // Force react-query to reload
-    queryClient.clear();
-  }, []);
-
   return (
-    <div className="min-h-screen flex flex-col h-screen">
+    <div className="flex flex-col h-full">
       <CalendarHeader
         currentViewStart={startDate}
         currentViewEnd={endDate}
@@ -573,22 +423,22 @@ export default function Calendar() {
         )}
       </main>
 
+      {/* Booking Modal */}
       <BookingModal
         open={bookingModalOpen}
         onClose={() => setBookingModalOpen(false)}
         timeslot={selectedTimeslot}
         onSubmit={handleBookingSubmit}
-        isPending={isPending}
+        isPending={isBooking}
       />
 
+      {/* Confirmation Modal */}
       <ConfirmationModal
         isOpen={confirmationModalOpen}
         onClose={() => setConfirmationModalOpen(false)}
-        timeslot={selectedTimeslot}
         bookingDetails={bookingDetails}
+        timeslot={selectedTimeslot}
       />
     </div>
   );
 }
-
-// This is needed because calendar.tsx references Button before it's defined
