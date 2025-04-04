@@ -47,6 +47,11 @@ export default function CalendarHeader({
     };
   }, []);
 
+  // Simple toggle function
+  const toggleSettings = () => {
+    setSettingsOpen(!settingsOpen);
+  };
+
   return (
     <header className="border-b border-[#dadce0] py-4 px-6 flex justify-between items-center sticky top-0 bg-white z-10">
       <div className="flex items-center">
@@ -200,9 +205,12 @@ export default function CalendarHeader({
             <Button
               variant="ghost"
               size="icon"
-              className="p-2 rounded-full hover:bg-[#f1f3f4] flex items-center"
-              onClick={() => setSettingsOpen(!settingsOpen)}
+              className={`p-2 rounded-full hover:bg-[#f1f3f4] flex items-center ${
+                settingsOpen ? "bg-[#f1f3f4]" : ""
+              }`}
+              onClick={toggleSettings}
               aria-label="הגדרות"
+              aria-expanded={settingsOpen}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -214,50 +222,49 @@ export default function CalendarHeader({
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className="text-[#5f6368]"
+                className={`text-[#5f6368] ${
+                  settingsOpen ? "text-[#1a73e8]" : ""
+                }`}
               >
                 <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
                 <circle cx="12" cy="12" r="3" />
               </svg>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="ml-1 text-[#5f6368]"
-              >
-                <path d="m6 9 6 6 6-6" />
-              </svg>
             </Button>
 
             {settingsOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg z-[9999] border border-gray-200">
-                <div className="py-1">
+              <div
+                className="absolute top-full right-0 mt-1 w-64 bg-white rounded-md shadow-lg border border-gray-200"
+                style={{ zIndex: 9999 }}
+              >
+                <ul className="py-1">
                   {isAdmin && (
-                    <button
-                      onClick={() => {
-                        onViewModeToggle?.();
-                        setSettingsOpen(false);
-                      }}
-                      className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium block"
-                    >
-                      {window.location.pathname === "/admin"
-                        ? "מעבר לתצוגת לקוחות"
-                        : "מעבר לתצוגת אדמין"}
-                    </button>
+                    <li>
+                      <button
+                        onClick={() => {
+                          if (onViewModeToggle) {
+                            onViewModeToggle();
+                            setSettingsOpen(false);
+                          }
+                        }}
+                        className="w-full text-right px-4 py-3 text-sm text-blue-600 hover:bg-blue-50 font-medium block"
+                      >
+                        {window.location.pathname === "/admin"
+                          ? "מעבר לתצוגת לקוחות"
+                          : "מעבר לתצוגת אדמין"}
+                      </button>
+                    </li>
                   )}
-                  <button className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 block">
-                    הגדרות
-                  </button>
-                  <button className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 block">
-                    עזרה
-                  </button>
-                </div>
+                  <li>
+                    <button className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 block">
+                      הגדרות
+                    </button>
+                  </li>
+                  <li>
+                    <button className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 block">
+                      עזרה
+                    </button>
+                  </li>
+                </ul>
               </div>
             )}
           </div>

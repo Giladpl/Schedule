@@ -441,15 +441,14 @@ export default function Calendar() {
 
   // Add handler for toggling between admin and client views
   const handleViewModeToggle = () => {
-    // Force a direct navigation to ensure the view changes correctly
     const currentPath = window.location.pathname;
-    const isCurrentlyAdmin = currentPath === "/admin";
 
-    if (isCurrentlyAdmin) {
-      // Navigate directly to calendar view
+    console.log("Toggle view mode from", currentPath);
+
+    // Use direct window location for reliable navigation
+    if (currentPath === "/admin") {
       window.location.href = "/calendar";
     } else {
-      // Navigate directly to admin view
       window.location.href = "/admin";
     }
   };
