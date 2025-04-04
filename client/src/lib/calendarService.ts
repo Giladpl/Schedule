@@ -480,19 +480,89 @@ export interface ClientData {
   }>;
 }
 
+// Cache for client type mappings from the API
+let clientTypeCache: Record<string, string> = {
+  all: "כל הלקוחות",
+};
+
+// Standard client type mapping for fallback
+const standardClientTypes: Record<string, string> = {
+  "0": "לקוח חדש",
+  "1": "פולי אחים",
+  "2": "מדריכים+",
+  "3": "מכירת עוגות",
+};
+
 // Fetch client data in the new structure
 export async function fetchClientData(): Promise<ClientData> {
-  return apiRequest<ClientData>("GET", "/api/client-data");
+  try {
+    const data = await apiRequest<ClientData>("GET", "/api/client-data");
+
+    // Reset the cache, keeping only the 'all' value
+    clientTypeCache = {
+      all: "כל הלקוחות",
+    };
+
+    // Populate the client type cache when we fetch client data
+    if (data && data.clients) {
+      data.clients.forEach((client) => {
+        if (client.id !== undefined) {
+          // Map numeric ID to display name
+          clientTypeCache[`${client.id}`] = client.type;
+        }
+        // Also store the name mapping in case it's passed directly
+        clientTypeCache[client.type] = client.type;
+      });
+    } else {
+      // If we couldn't fetch data, use standard mappings as fallback
+      Object.entries(standardClientTypes).forEach(([id, name]) => {
+        clientTypeCache[id] = name;
+      });
+    }
+
+    return data;
+  } catch (error) {
+    console.error("[Debug] Error fetching client data:", error);
+
+    // In case of error, use standard mappings
+    Object.entries(standardClientTypes).forEach(([id, name]) => {
+      clientTypeCache[id] = name;
+    });
+
+    // Return a minimal data structure
+    return {
+      clients: Object.entries(standardClientTypes).map(([id, type]) => ({
+        id: parseInt(id),
+        type,
+        meetings: {},
+      })),
+      meetingTypes: [
+        { name: "טלפון", duration: 15 },
+        { name: "זום", duration: 30 },
+        { name: "פגישה", duration: 45 },
+      ],
+    };
+  }
 }
 
 // Client type display names
 export function getClientTypeDisplayName(clientType: string): string {
-  // שימוש במינימום שמות נפוצים לתרגום ואחרת להשתמש בשם המקורי
+  // If it's in our cache, use that first
+  if (clientTypeCache[clientType]) {
+    return clientTypeCache[clientType];
+  }
+
+  // Next try the standard mappings for numeric IDs
+  if (standardClientTypes[clientType]) {
+    return standardClientTypes[clientType];
+  }
+
+  // Last resort - common display names or the original
   const commonDisplayNames: Record<string, string> = {
     all: "כל הלקוחות",
     new_customer: "לקוח חדש",
   };
 
-  // להחזיר שם תצוגה מותאם או את שם הלקוח המקורי אם אין מיפוי
+  // Return a display name or the original if no mapping exists
   return commonDisplayNames[clientType] || clientType;
 }

@@ -1,4 +1,3 @@
-import { getClientTypeDisplayName } from "@/lib/calendarService";
 import { cn } from "@/lib/utils";
 import { Timeslot } from "@shared/schema";
 import { Calendar, Clock, Phone, Users, Video } from "lucide-react";
@@ -60,6 +59,20 @@ export function stringToColor(str: string): string {
 export const CLIENT_TYPE_COLORS: Record<string, string> = {
   all: "#6366f1", // indigo
   new_customer: "#1a73e8", // Blue
+  "0": "#1a73e8", // לקוח חדש
+  "1": "#ea4335", // פולי אחים
+  "2": "#34a853", // מדריכים+
+  "3": "#fbbc04", // מכירת עוגות
+};
+
+// Client type display names
+export const CLIENT_TYPE_NAMES: Record<string, string> = {
+  all: "כל הלקוחות",
+  new_customer: "לקוח חדש",
+  "0": "לקוח חדש",
+  "1": "פולי אחים",
+  "2": "מדריכים+",
+  "3": "מכירת עוגות",
 };
 
 // Meeting type to icon mapping
@@ -80,50 +93,23 @@ export const MEETING_TYPE_STYLES: Record<
   default: { color: "#8b5cf6", name: "" },
 };
 
-// Client type to allowed meeting types mapping
-// Hardcoded mapping based on server data for faster client-side filtering
-export const CLIENT_ALLOWED_MEETING_TYPES: Record<string, string[]> = {
-  all: ["טלפון", "זום", "פגישה"],
-  new_customer: ["טלפון", "זום", "פגישה"],
-  "פולי אחים": ["טלפון", "פגישה"],
-  "מדריכים+": ["טלפון", "זום"],
-  "מכירת עוגות": ["טלפון", "פגישה"],
-};
-
 interface TimeSlotProps extends React.HTMLAttributes<HTMLDivElement> {
   timeslot: Timeslot;
   onClick?: () => void;
-  activeClientType?: string; // Add prop for currently filtered client type
+  activeClientTypes?: string[]; // Updated to accept an array of client types
 }
 
 export function TimeSlot({
   timeslot,
   onClick,
   className,
-  activeClientType,
+  activeClientTypes = [],
   ...props
 }: TimeSlotProps) {
-  // בחירת צבע לסוג לקוח - אם לא קיים, צור באופן דינמי
-  const clientTypeColor = useMemo(() => {
-    // If we're filtering by a specific client type, use that instead of the slot's type
-    const effectiveClientType =
-      activeClientType && activeClientType !== "all"
-        ? activeClientType
-        : timeslot.clientType;
-    return (
-      CLIENT_TYPE_COLORS[effectiveClientType] ||
-      stringToColor(effectiveClientType)
-    );
-  }, [timeslot.clientType, activeClientType]);
-
-  // Get client display name - respect the currently filtered client type
-  const clientDisplayName = useMemo(() => {
-    const effectiveClientType =
-      activeClientType && activeClientType !== "all"
-        ? activeClientType
-        : timeslot.clientType;
-    return getClientTypeDisplayName(effectiveClientType);
-  }, [timeslot.clientType, activeClientType]);
+  // Check if "all" is included in client types or if the array is empty
+  // Empty selection means "all"
+  const hasAllClientType =
+    activeClientTypes.length === 0 || activeClientTypes.includes("all");
 
   const isAvailable = timeslot.isAvailable;
 
@@ -160,35 +146,37 @@ export function TimeSlot({
     .map((type) => type.trim())
     .filter(Boolean);
 
-  // Filter meeting types based on the active client type and what's allowed
-  const filteredMeetingTypes = useMemo(() => {
-    if (!activeClientType || activeClientType === "all") {
-      return meetingTypesList;
+  // Process client types to get unique display names without duplicates
+  const clientTypes = useMemo(() => {
+    let types: string[] = [];
+
+    // When client type filters are active, use those client types for display
+    if (!hasAllClientType) {
+      // Use a Set to eliminate duplicates in a way compatible with older JavaScript
+      const uniqueTypes = new Set<string>();
+      activeClientTypes.forEach((type) => {
+        if (type && type !== "all") {
+          uniqueTypes.add(type);
+        }
+      });
+      types = Array.from(uniqueTypes);
+    } else if (timeslot.clientType !== "all") {
+      // If no filter but timeslot has a specific client type
+      types = [timeslot.clientType];
     }
 
-    // Get allowed meeting types for this client
-    const allowedTypes =
-      CLIENT_ALLOWED_MEETING_TYPES[activeClientType] ||
-      CLIENT_ALLOWED_MEETING_TYPES["all"];
+    return types;
+  }, [timeslot.clientType, activeClientTypes, hasAllClientType]);
 
-    // Only show meeting types that are both in the timeslot AND allowed for this client
-    return meetingTypesList.filter((type) => allowedTypes.includes(type));
-  }, [meetingTypesList, activeClientType]);
-
-  // If after filtering there are no meeting types, don't show this slot at all
-  if (
-    activeClientType &&
-    activeClientType !== "all" &&
-    activeClientType !== timeslot.clientType &&
-    filteredMeetingTypes.length === 0
-  ) {
-    return null;
-  }
+  // This ensures meeting types are properly displayed
+  const filteredMeetingTypes = useMemo(() => {
+    return meetingTypesList;
+  }, [meetingTypesList]);
 
   return (
     <div
       className={cn(
-        "relative h-full w-full overflow-hidden rounded-lg border px-2 py-1 text-xs",
+        "relative h-full w-full overflow-hidden rounded-lg border px-3 py-2.5 text-xs",
         isAvailable
           ? "border-green-200 bg-green-50"
           : "border-gray-200 bg-gray-50",
@@ -199,46 +187,69 @@ export function TimeSlot({
       onClick={onClick}
       {...props}
     >
-      {/* Client type badge */}
-      <div className="absolute top-1 right-1">
-        <span
-          className="text-xs px-2 py-0.5 rounded-md font-medium shadow-sm"
-          style={{
-            backgroundColor: clientTypeColor,
-            color: "white",
-            fontWeight:
-              activeClientType && activeClientType !== "all"
-                ? "bold"
-                : "medium",
-          }}
-        >
-          {clientDisplayName}
-        </span>
+      {/* Client type ribbons on right side */}
+      <div className="absolute right-0 top-0 bottom-0 w-3">
+        {clientTypes.length === 0 ? (
+          <div
+            className="absolute inset-0 client-type-ribbon"
+            style={{ backgroundColor: "#6366f1" }}
+            data-tooltip="כל הלקוחות"
+          />
+        ) : (
+          clientTypes.map((type, index) => {
+            const color = CLIENT_TYPE_COLORS[type] || stringToColor(type);
+            const name = CLIENT_TYPE_NAMES[type] || type;
+            const height =
+              clientTypes.length > 1 ? `${100 / clientTypes.length}%` : "100%";
+            const top =
+              clientTypes.length > 1
+                ? `${(index * 100) / clientTypes.length}%`
+                : "0";
+
+            return (
+              <div
+                key={index}
+                className="client-type-ribbon"
+                style={{
+                  position: "absolute",
+                  top,
+                  right: 0,
+                  height,
+                  width: "100%",
+                  backgroundColor: color,
+                }}
+                data-tooltip={name}
+              />
+            );
+          })
+        )}
       </div>
 
-      {/* Time range and duration */}
-      <div className="pt-6 flex flex-col">
-        <div className="flex items-center">
-          <Clock size={14} className="mr-1 text-gray-500" />
-          <span className="font-semibold">{timeRangeStr}</span>
+      {/* Time range and duration - centered in card */}
+      <div className="flex flex-col items-center justify-center my-4 text-center">
+        <div className="flex items-center mb-1">
+          <Clock size={18} className="text-gray-600 shrink-0" />
+          <span className="font-bold text-base mx-2.5 text-gray-800">
+            {timeRangeStr}
+          </span>
         </div>
-        <span className="text-gray-600 text-[10px] mt-1">{durationStr}</span>
+        <span className="text-gray-500 text-xs">{durationStr}</span>
       </div>
 
-      {/* Meeting types as icons - only show filtered types */}
+      {/* Meeting types as badges at bottom */}
       {filteredMeetingTypes.length > 0 && filteredMeetingTypes[0] !== "all" && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-2 justify-center mt-1">
           {filteredMeetingTypes.map((type, index) => {
             const style =
               MEETING_TYPE_STYLES[type] || MEETING_TYPE_STYLES.default;
             return (
               <div
                 key={index}
-                className="flex items-center px-2 py-1 rounded-full text-[10px]"
+                className="flex items-center px-2 py-1 rounded-full text-[11px] shadow-sm gap-x-1"
                 style={{ backgroundColor: style.color }}
                 title={type}
               >
-                <span className="mr-1">
+                <span className="flex items-center justify-center">
                   {MEETING_TYPE_ICONS[type] || (
                     <Calendar size={14} className="text-white" />
                   )}

@@ -3,6 +3,68 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }
+
   * {
     @apply border-border;
   }
@@ -18,6 +80,27 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
+
+  /* Fix dropdown positioning for RTL layouts */
+  [dir="rtl"] [cmdk-input] {
+    text-align: right;
+  }
+
+  /* Ensure dropdowns have proper z-index */
+  [cmdk-root] {
+    z-index: 100;
+  }
+
+  /* Make sure dropdown items are clickable */
+  [cmdk-item] {
+    cursor: pointer;
+  }
+
+  /* Fix badge position in RTL */
+  [dir="rtl"] .badge button {
+    margin-right: 0.25rem;
+    margin-left: 0;
+  }
 }
 
 /* Calendar specific styles */
@@ -27,19 +110,106 @@
   flex-direction: column;
 }
 
-/* Hide scrollbars but maintain scroll functionality if needed for modals */
+/* Enhanced scrollbar hiding - super aggressive */
 .hide-scrollbar {
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE and Edge */
+  overflow: -moz-scrollbars-none !important; /* Old Firefox */
 }
 
 .hide-scrollbar::-webkit-scrollbar {
-  display: none; /* Chrome, Safari and Opera */
+  display: none !important; /* Chrome, Safari, and Opera */
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
 }
 
-/* Style for meeting slots to ensure visibility */
-.rounded-lg {
-  overflow: visible !important;
+.hide-scrollbar::-webkit-scrollbar-thumb {
+  background: transparent !important;
+}
+
+.hide-scrollbar::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+/* Force webkit scrollbar hiding */
+::-webkit-scrollbar {
+  width: 0px;
+  background: transparent; /* make scrollbar transparent */
+}
+
+/* Styled minimal scrollbar (alternative) */
+.styled-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.styled-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.styled-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+}
+
+/* RTL specific adjustments */
+[dir="rtl"] .select-container input {
+  text-align: right;
+}
+
+/* Fix dropdown positioning for RTL */
+[dir="rtl"] .dropdown-container {
+  direction: rtl;
+}
+
+/* Fix dropdown options text alignment for RTL */
+[dir="rtl"] .dropdown-option {
+  text-align: right;
+}
+
+/* Make dropdown options clickable */
+.dropdown-option {
+  cursor: pointer;
+}
+
+/* Ensure badges in RTL mode are properly positioned */
+[dir="rtl"] .badge-container {
+  display: flex;
+  flex-direction: row-reverse;
+}
+
+/* Increase dropdown z-index to ensure it appears above other elements */
+.dropdown-content {
+  z-index: 100;
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  .dropdown-option {
+    padding: 0.75rem 1rem; /* Larger touch targets on mobile */
+  }
+}
+
+/* Ensure dropdown is visible and clickable */
+.dropdown-container {
+  position: relative;
+  z-index: 50;
+}
+
+/* Ensure popover content is above other elements */
+.popover-content {
+  z-index: 100;
+}
+
+/* Open state for dropdowns */
+.dropdown-container.open {
+  z-index: 100;
+}
+
+/* Ensure active selection is visible */
+.option-selected {
+  background-color: rgba(59, 130, 246, 0.1);
 }
 
 /* More readable timeslots for small screens */
@@ -65,4 +235,175 @@
     min-height: 44px;
     min-width: 44px;
   }
+}
+
+/* RTL support for dropdown inputs */
+.dropdown-container[dir="rtl"] input {
+  text-align: right;
+}
+
+/* Fix badge position in RTL mode */
+.rtl\:flex-row-reverse.badge-container {
+  flex-direction: row-reverse;
+}
+
+/* Hide scrollbars but allow scrolling */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Better modals for horizontal view */
+.horizontal-day {
+  min-width: 12rem;
+}
+
+/* Improved styling for meeting slots */
+.timeslot-badge {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.4rem;
+}
+
+/* Better readability for timeslots */
+@media (max-width: 768px) {
+  .timeslot-time {
+    font-size: 0.8rem;
+  }
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  .mobile-touch-target {
+    min-height: 44px;
+  }
+
+  .mobile-spacing {
+    margin-bottom: 1rem;
+  }
+}
+
+/* Client type tooltip styles */
+.tooltip-container {
+  position: relative;
+}
+
+.tooltip-container .tooltip-text {
+  visibility: hidden;
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  background-color: rgba(0, 0, 0, 0.75);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  margin-right: 6px;
+  opacity: 0;
+  transition: opacity 0.2s, visibility 0.2s;
+  z-index: 50;
+  pointer-events: none;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.tooltip-container:hover .tooltip-text {
+  visibility: visible;
+  opacity: 1;
+}
+
+/* Add a subtle arrow to the tooltip */
+.tooltip-container .tooltip-text::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  margin-top: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: transparent transparent transparent rgba(0, 0, 0, 0.75);
+}
+
+/* Enhanced tooltip styles for client type ribbons */
+.client-type-ribbon {
+  position: relative;
+  z-index: 10;
+  transition: all 0.2s ease;
+}
+
+.client-type-ribbon:hover {
+  opacity: 0.85;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
+}
+
+.client-type-ribbon:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  background-color: rgba(0, 0, 0, 0.85);
+  color: white;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  z-index: 20;
+  pointer-events: none;
+  animation: tooltipFadeIn 0.25s ease-out forwards;
+  max-width: 200px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  text-align: start;
+  letter-spacing: 0.01em;
+}
+
+.client-type-ribbon:hover::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: transparent rgba(0, 0, 0, 0.85) transparent transparent;
+  z-index: 21;
+  pointer-events: none;
+  animation: tooltipArrowFadeIn 0.25s ease-out forwards;
+}
+
+@keyframes tooltipFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) translateX(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+@keyframes tooltipArrowFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) translateX(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+/* Remove old tooltip styles that aren't working */
+.tooltip-container,
+.tooltip-container .tooltip-text,
+.tooltip-container:hover .tooltip-text,
+.tooltip-container .tooltip-text::after {
+  display: none;
 }

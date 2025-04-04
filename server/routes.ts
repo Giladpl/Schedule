@@ -74,7 +74,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   // API routes
   app.get("/api/timeslots", async (req, res) => {
     try {
-      const { start, end, type, meetingType } = req.query;
+      const { start, end, type, types, typeIds, meetingType, meetingTypes } =
+        req.query;
 
       // Validate start and end are provided
       if (!start || !end) {
@@ -95,103 +96,41 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.json([]);
       }
 
-      // Apply client type filter if provided
+      // ---------------- CLIENT TYPE FILTERING ----------------
+      let targetClientTypes: string[] = [];
+
+      // Collect all client type parameters
       if (type && type !== "all") {
-        const targetClientType = type as string;
-        const validClientTypes = new Set(["all"]);
-        validClientTypes.add(targetClientType);
+        targetClientTypes.push(type as string);
+      }
 
-        // Get client rules to check allowed meeting types
-        const allClientRules = await storage.getClientRules();
-        let selectedClientRules: any[] = [];
+      if (types) {
+        const typesArray = (types as string).split(",").filter(Boolean);
+        targetClientTypes.push(...typesArray);
+      }
 
-        // First try exact match by client type
-        selectedClientRules = allClientRules.filter(
-          (rule) => rule.clientType === targetClientType
-        );
+      if (typeIds) {
+        const typeIdsArray = (typeIds as string).split(",").filter(Boolean);
+        targetClientTypes.push(...typeIdsArray);
+      }
 
-        // If no exact match, try by numeric ID
-        if (
-          selectedClientRules.length === 0 &&
-          !isNaN(parseInt(targetClientType))
-        ) {
-          const numericId = parseInt(targetClientType);
-          const matchByRowId = allClientRules.find(
-            (rule) => rule.rowId === numericId
-          );
-          if (matchByRowId) {
-            console.log(
-              `Found client rule by rowId ${numericId}: ${matchByRowId.clientType}`
-            );
-            validClientTypes.add(matchByRowId.clientType);
-            selectedClientRules = allClientRules.filter(
-              (rule) => rule.clientType === matchByRowId.clientType
-            );
-          }
-        }
+      // If no client types specified or only "all", treat as "all"
+      const hasSpecificClientTypes =
+        targetClientTypes.length > 0 && !targetClientTypes.includes("all");
 
-        // If still no match, try by first letter for legacy support
-        if (selectedClientRules.length === 0 && targetClientType.length === 1) {
-          const matchingRules = allClientRules.filter((rule) =>
-            rule.clientType.startsWith(targetClientType)
-          );
-
-          if (matchingRules.length > 0) {
-            matchingRules.forEach((rule) => {
-              console.log(
-                `Found client rule by first letter ${targetClientType}: ${rule.clientType}`
-              );
-              validClientTypes.add(rule.clientType);
-            });
-            selectedClientRules = matchingRules;
-          }
-        }
-
-        // Get the allowed meeting types for this client
-        const allowedMeetingTypes = new Set<string>();
-        selectedClientRules.forEach((rule) => {
-          if (rule.allowedTypes) {
-            rule.allowedTypes.split(",").forEach((type: string) => {
-              allowedMeetingTypes.add(type.trim());
-            });
-          }
-        });
-
+      // Apply client type filtering if specific types are selected
+      if (hasSpecificClientTypes) {
         console.log(
-          `Allowed meeting types for ${targetClientType}: ${Array.from(
-            allowedMeetingTypes
-          ).join(", ")}`
+          `Filtering by client types: ${targetClientTypes.join(", ")}`
         );
 
-        // Filter timeslots by client type AND allowed meeting types
+        // Simple OR logic for client types
         timeslots = timeslots.filter((slot) => {
-          // First check if this slot is specifically for this client
-          if (
-            validClientTypes.has(slot.clientType) &&
-            slot.clientType !== "all"
-          ) {
-            return true;
-          }
-
-          // If the slot is for "all" clients, check if the meeting type is allowed
-          if (slot.clientType === "all") {
-            // Get the meeting types for this slot
-            const slotMeetingTypes = slot.meetingTypes
-              .split(",")
-              .map((t) => t.trim());
-
-            // If no specific client rules found, allow all meeting types
-            if (allowedMeetingTypes.size === 0) {
-              return true;
-            }
-
-            // Check if ANY of the slot's meeting types are allowed for this client
-            return slotMeetingTypes.some((meetingType) =>
-              allowedMeetingTypes.has(meetingType)
-            );
-          }
-
-          return false;
+          // If slot is for "all" clients or matches any selected client type
+          return (
+            slot.clientType === "all" ||
+            targetClientTypes.includes(slot.clientType)
+          );
         });
 
         console.log(
@@ -199,17 +138,50 @@ export async function registerRoutes(app: Express): Promise<void> {
         );
       }
 
-      // Apply meeting type filter if provided
+      // ---------------- MEETING TYPE FILTERING ----------------
+      let targetMeetingTypes: string[] = [];
+
+      // Collect all meeting type parameters
       if (meetingType && meetingType !== "all") {
-        timeslots = timeslots.filter((slot) =>
-          slot.meetingTypes.split(",").some((t) => t.trim() === meetingType)
+        targetMeetingTypes.push(meetingType as string);
+      }
+
+      if (meetingTypes && meetingTypes !== "all") {
+        const meetingTypesArray = (meetingTypes as string)
+          .split(",")
+          .filter(Boolean);
+        targetMeetingTypes.push(...meetingTypesArray);
+      }
+
+      // If no meeting types specified or only "all", treat as "all"
+      const hasSpecificMeetingTypes =
+        targetMeetingTypes.length > 0 && !targetMeetingTypes.includes("all");
+
+      // Apply meeting type filtering if specific types are selected
+      if (hasSpecificMeetingTypes) {
+        console.log(
+          `Filtering by meeting types: ${targetMeetingTypes.join(", ")}`
         );
+
+        // Simple OR logic for meeting types
+        timeslots = timeslots.filter((slot) => {
+          const slotMeetingTypes = slot.meetingTypes
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean);
+
+          // Check if ANY of the timeslot's meeting types match ANY of the selected types
+          return slotMeetingTypes.some((type) =>
+            targetMeetingTypes.includes(type)
+          );
+        });
+
         console.log(
           `After meeting type filtering: ${timeslots.length} timeslots remaining`
         );
       }
 
-      // Return filtered timeslots directly
+      // Return filtered timeslots
       return res.json(timeslots);
     } catch (error) {
       console.error("Error getting timeslots:", error);

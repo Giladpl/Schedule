@@ -2,35 +2,72 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  MultiSelectOption,
+  SimpleMultiSelect,
+} from "@/components/ui/simple-multi-select";
 import { fetchClientData } from "@/lib/calendarService";
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCcw } from "lucide-react";
+import { Phone, RefreshCcw, Users, Video } from "lucide-react";
 import { useMemo } from "react";
 
 // Default meeting types if we can't fetch them from server
 const DEFAULT_MEETING_TYPES = ["טלפון", "זום", "פגישה"];
 
+// Meeting type styles for the legend
+const MEETING_TYPE_STYLES: Record<string, { color: string; icon: any }> = {
+  טלפון: { color: "#34a853", icon: Phone },
+  זום: { color: "#4285f4", icon: Video },
+  פגישה: { color: "#ea4335", icon: Users },
+  default: { color: "#fbbc04", icon: null },
+};
+
+// Client type colors for the legend
+const CLIENT_TYPE_COLORS: Record<string, string> = {
+  new_customer: "#9c27b0", // Purple
+  "פולי אחים": "#2196f3", // Blue
+  "מדריכים+": "#ff9800", // Orange
+  "מכירת עוגות": "#4caf50", // Green
+  all: "#607d8b", // Gray-Blue
+  default: "#9e9e9e", // Gray
+};
+
 interface SidebarProps {
-  clientType: string;
-  onClientTypeChange: (value: string) => void;
-  meetingType: string;
-  onMeetingTypeChange: (value: string) => void;
+  clientTypes: string[];
+  onClientTypeChange: (values: string[]) => void;
+  meetingTypes: string[];
+  onMeetingTypeChange: (values: string[]) => void;
   isAdmin?: boolean;
   viewMode?: "admin" | "client";
 }
 
+// Type definition for meetingTypes that can come in different formats
+type MeetingTypeFromAPI = string | { name: string; duration?: number };
+
+// Helper function to normalize meeting types from different formats
+function normalizeMeetingTypes(meetingTypes: any): string[] {
+  if (!meetingTypes) return DEFAULT_MEETING_TYPES;
+
+  if (Array.isArray(meetingTypes)) {
+    if (meetingTypes.length === 0) return DEFAULT_MEETING_TYPES;
+
+    // If the array contains objects with name properties
+    if (typeof meetingTypes[0] === "object" && meetingTypes[0]?.name) {
+      return meetingTypes.map((mt) => mt.name);
+    }
+
+    // If it's already a string array
+    if (typeof meetingTypes[0] === "string") {
+      return meetingTypes as string[];
+    }
+  }
+
+  return DEFAULT_MEETING_TYPES;
+}
+
 export default function Sidebar({
-  clientType,
+  clientTypes,
   onClientTypeChange,
-  meetingType,
+  meetingTypes,
   onMeetingTypeChange,
   isAdmin = false,
   viewMode = "admin",
@@ -42,53 +79,117 @@ export default function Sidebar({
     staleTime: 60000, // 1 minute
   });
 
-  // Function to get available meeting types based on client type
+  // Function to get available meeting types based on client types
   const availableMeetingTypes = useMemo((): string[] => {
     // Default meeting types as fallback
     if (!data || !data.clients || data.clients.length === 0) {
       return DEFAULT_MEETING_TYPES;
     }
 
-    // If 'all' is selected and user is admin, return all meeting types
-    if (clientType === "all" && viewMode === "admin") {
-      return Array.isArray(data.meetingTypes)
-        ? data.meetingTypes
-        : DEFAULT_MEETING_TYPES;
+    // If 'all' is selected or in admin view, return all meeting types
+    if (clientTypes.includes("all") && viewMode === "admin") {
+      return normalizeMeetingTypes(data.meetingTypes);
     }
 
-    // Try to find the selected client
-    let selectedClient = null;
+    // If multiple client types are selected, combine their meeting types
+    if (clientTypes.length > 0) {
+      const allMeetingTypes = new Set<string>();
 
-    // First try to match by type name
-    selectedClient = data.clients.find((client) => client.type === clientType);
+      // For each client type, find its meeting types and add to the set
+      clientTypes.forEach((clientType) => {
+        let selectedClient = null;
 
-    // Then try to match by numeric ID if clientType is a number
-    if (!selectedClient && !isNaN(parseInt(clientType))) {
-      const numericId = parseInt(clientType);
-      selectedClient = data.clients.find((client) => client.id === numericId);
-    }
+        // First try to match by numeric ID if clientType is a number
+        if (!isNaN(parseInt(clientType))) {
+          const numericId = parseInt(clientType);
+          selectedClient = data.clients.find(
+            (client) => client.id === numericId
+          );
+        }
 
-    // Legacy fallback: try first letter matching (for backward compatibility)
-    if (!selectedClient && clientType.length === 1) {
-      selectedClient = data.clients.find((client) =>
-        client.type.startsWith(clientType)
-      );
-    }
+        // If no match by ID, try to match by type name
+        if (!selectedClient) {
+          selectedClient = data.clients.find(
+            (client) => client.type === clientType
+          );
+        }
 
-    // If a matching client is found, return its meeting types
-    if (selectedClient && selectedClient.meetings) {
-      return Object.keys(selectedClient.meetings);
+        // Legacy fallback: try first letter matching
+        if (!selectedClient && clientType.length === 1) {
+          selectedClient = data.clients.find((client) =>
+            client.type.startsWith(clientType)
+          );
+        }
+
+        // Add meeting types from the matching client
+        if (selectedClient && selectedClient.meetings) {
+          Object.keys(selectedClient.meetings).forEach((meetingType) => {
+            allMeetingTypes.add(meetingType);
+          });
+        }
+      });
+
+      // Convert set to array
+      if (allMeetingTypes.size > 0) {
+        return Array.from(allMeetingTypes);
+      }
     }
 
     // Fallback to all meeting types
-    return Array.isArray(data.meetingTypes)
-      ? data.meetingTypes
-      : DEFAULT_MEETING_TYPES;
-  }, [data, clientType, viewMode]);
+    console.log(
+      `[Debug] Sidebar: Using fallback meeting types for clientTypes ${clientTypes.join(
+        ","
+      )}`
+    );
+    return normalizeMeetingTypes(data.meetingTypes);
+  }, [data, clientTypes, viewMode]);
 
-  // Only show client type selector for admins
+  // Prepare options for MultiSelect components
+  const clientTypeOptions = useMemo<MultiSelectOption[]>(() => {
+    if (!data || !data.clients) return [{ value: "all", label: "הכל" }];
+
+    return [
+      { value: "all", label: "הכל" },
+      ...data.clients.map((client) => {
+        // Use the client.type directly for the label, which is the proper display name from the server
+        // Use the client ID as the value if available, otherwise use the type
+        return {
+          // If ID exists, use it as the value, otherwise use the type
+          value: client.id !== undefined ? `${client.id}` : client.type,
+          // Use the original type name directly from the server as the label
+          label: client.type,
+        };
+      }),
+    ];
+  }, [data]);
+
+  const meetingTypeOptions = useMemo<MultiSelectOption[]>(() => {
+    return [
+      { value: "all", label: "הכל" },
+      ...availableMeetingTypes.map((type) => ({
+        value: type,
+        label: type,
+      })),
+    ];
+  }, [availableMeetingTypes]);
+
+  // Get client types for admin legend
+  const legendClientTypes = useMemo(() => {
+    if (!data || !data.clients) return [];
+    return [
+      { id: "all", type: "הכל" },
+      ...data.clients.map((client) => ({
+        id: client.id !== undefined ? `${client.id}` : client.type,
+        type: client.type,
+      })),
+    ];
+  }, [data]);
+
   return (
-    <div className="w-64 border-r border-[#dadce0] p-4 h-full overflow-auto shrink-0 hidden md:block">
+    <div
+      className="w-64 border-r border-[#dadce0] p-4 h-full overflow-auto shrink-0 hidden md:block"
+      dir="rtl"
+    >
       <Card className="mb-6 border-0 shadow-none">
         <CardHeader className="p-0 pb-2">
           <h2 className="text-lg font-medium text-[#3c4043]">סינון פגישות</h2>
@@ -102,34 +203,13 @@ export default function Sidebar({
               >
                 סוג לקוח
               </Label>
-              <Select
-                value={clientType}
-                onValueChange={onClientTypeChange}
+              <SimpleMultiSelect
+                options={clientTypeOptions}
+                selected={clientTypes}
+                onChange={onClientTypeChange}
+                placeholder="בחר סוג לקוח"
                 disabled={isLoading}
-              >
-                <SelectTrigger
-                  id="clientType"
-                  className="w-full border-[#dadce0]"
-                >
-                  <SelectValue placeholder="בחר סוג לקוח" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectLabel>סוג לקוח</SelectLabel>
-                    <SelectItem value="all">הכל</SelectItem>
-                    {data?.clients?.map((client) => (
-                      <SelectItem
-                        key={client.id !== undefined ? client.id : client.type}
-                        value={
-                          client.id !== undefined ? `${client.id}` : client.type
-                        }
-                      >
-                        {client.type}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+              />
             </div>
           )}
 
@@ -140,41 +220,75 @@ export default function Sidebar({
             >
               סוג פגישה
             </Label>
-            <Select
-              value={meetingType}
-              onValueChange={onMeetingTypeChange}
+            <SimpleMultiSelect
+              options={meetingTypeOptions}
+              selected={meetingTypes}
+              onChange={onMeetingTypeChange}
+              placeholder="בחר סוג פגישה"
               disabled={isLoading}
-            >
-              <SelectTrigger
-                id="meetingType"
-                className="w-full border-[#dadce0]"
-              >
-                <SelectValue placeholder="בחר סוג פגישה" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectLabel>סוג פגישה</SelectLabel>
-                  <SelectItem value="all">הכל</SelectItem>
-                  {availableMeetingTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+            />
           </div>
         </CardContent>
       </Card>
 
-      <Card className="border-0 shadow-none">
+      {/* Meeting Types Legend */}
+      <Card className="border-0 shadow-none mb-6">
         <CardHeader className="p-0 pb-2">
-          <h2 className="text-lg font-medium text-[#3c4043]">זמני פעילות</h2>
+          <h2 className="text-lg font-medium text-[#3c4043]">מקרא</h2>
         </CardHeader>
         <CardContent className="p-0 text-sm text-[#5f6368]">
-          <p className="mb-3">ימים א-ה: 9:00-17:00</p>
-          <p className="mb-3">יום ו: 9:00-13:00</p>
-          <p>שבת: סגור</p>
+          <div className="space-y-3">
+            <h3 className="text-xs font-medium text-[#5f6368]">סוגי פגישות:</h3>
+            <div className="flex items-center mb-2">
+              <div
+                className="w-5 h-5 rounded-sm ml-3 flex items-center justify-center text-white"
+                style={{ backgroundColor: "#34a853" }}
+              >
+                <Phone size={14} />
+              </div>
+              <span className="text-sm">טלפון (Phone)</span>
+            </div>
+            <div className="flex items-center mb-2">
+              <div
+                className="w-5 h-5 rounded-sm ml-3 flex items-center justify-center text-white"
+                style={{ backgroundColor: "#4285f4" }}
+              >
+                <Video size={14} />
+              </div>
+              <span className="text-sm">זום (Zoom)</span>
+            </div>
+            <div className="flex items-center mb-2">
+              <div
+                className="w-5 h-5 rounded-sm ml-3 flex items-center justify-center text-white"
+                style={{ backgroundColor: "#ea4335" }}
+              >
+                <Users size={14} />
+              </div>
+              <span className="text-sm">פגישה (In-person)</span>
+            </div>
+
+            {/* Client Types Legend - Only shown in admin view */}
+            {viewMode === "admin" && legendClientTypes.length > 0 && (
+              <>
+                <h3 className="text-xs font-medium text-[#5f6368] mt-4">
+                  סוגי לקוחות:
+                </h3>
+                {legendClientTypes.map((client, index) => (
+                  <div key={index} className="flex items-center mb-2">
+                    <div
+                      className="w-5 h-5 rounded-sm ml-3"
+                      style={{
+                        backgroundColor:
+                          CLIENT_TYPE_COLORS[client.type] ||
+                          CLIENT_TYPE_COLORS.default,
+                      }}
+                    />
+                    <span className="text-sm">{client.type}</span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -186,7 +300,7 @@ export default function Sidebar({
             onClick={() => refetch()}
             disabled={isLoading}
           >
-            <RefreshCcw className="h-3.5 w-3.5 mr-2" />
+            <RefreshCcw className="h-3.5 w-3.5 ml-2" />
             {isLoading ? "מרענן..." : "רענן נתוני לקוחות"}
           </Button>
         )}
@@ -198,7 +312,7 @@ export default function Sidebar({
             window.open("https://calendly.com/support", "_blank");
           }}
         >
-          צור קשר לתמיכה
+          לשליחת הודעה
         </Button>
       </div>
     </div>

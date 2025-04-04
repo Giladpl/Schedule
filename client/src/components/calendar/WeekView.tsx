@@ -1,59 +1,41 @@
+import { useWindowSize } from "@/hooks/useWindowSize";
+import { getClientTypeDisplayName } from "@/lib/calendarService";
+import { getNowInIsrael } from "@/lib/timeUtils";
+import { getDayName, getDayOfMonth } from "@/lib/utils";
+import { Timeslot } from "@shared/schema";
+import {
+  endOfDay,
+  format,
+  isSameDay,
+  isValid,
+  isWithinInterval,
+  startOfDay,
+} from "date-fns";
+import { Calendar, ChevronDown, Clock } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   CLIENT_TYPE_COLORS,
   MEETING_TYPE_ICONS,
   MEETING_TYPE_STYLES,
-  TimeSlot,
   stringToColor,
-} from "@/components/ui/time-slot";
-import { getClientTypeDisplayName } from "@/lib/calendarService";
-import { getNowInIsrael } from "@/lib/timeUtils";
-import { getDayName, getDayOfMonth, isSameDay } from "@/lib/utils";
-import { Timeslot } from "@shared/schema";
-import { Calendar, ChevronDown, Info } from "lucide-react";
-import React, { useEffect, useMemo, useState } from "react";
+  TimeSlot,
+} from "../ui/time-slot";
 
-// Add a useWindowSize hook to track screen size
-function useWindowSize() {
-  const [windowSize, setWindowSize] = useState({
-    width: typeof window !== "undefined" ? window.innerWidth : 0,
-    height: typeof window !== "undefined" ? window.innerHeight : 0,
-  });
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    // Handler to call on window resize
-    const handleResize = () => {
-      // Set window width/height to state
-      setWindowSize({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
-    };
-
-    // Add event listener
-    window.addEventListener("resize", handleResize);
-
-    // Call handler right away so state gets updated with initial window size
-    handleResize();
-
-    // Remove event listener on cleanup
-    return () => window.removeEventListener("resize", handleResize);
-  }, []); // Empty array ensures that effect is only run on mount and unmount
-
-  return windowSize;
-}
+// Meeting type colors
+const MEETING_TYPE_COLORS: Record<string, string> = {
+  טלפון: "#34a853", // Green
+  זום: "#4285f4", // Blue
+  פגישה: "#ea4335", // Red
+  default: "#fbbc04", // Yellow
+};
 
 interface WeekViewProps {
-  weekDays: Date[];
+  startDate: Date;
   timeslots: Timeslot[];
-  onSelectTimeslot: (timeslot: Timeslot) => void;
-  selectedDate: Date | null;
-  onSelectDate?: (date: Date) => void; // Add optional onSelectDate prop
-  clientType?: string; // Add clientType prop
-  isAdmin?: boolean;
-  meetingType: string;
-  viewMode: "admin" | "client";
+  onTimeslotClick?: (timeslot: Timeslot) => void;
+  selectedMeetingTypes?: string[];
+  activeClientTypes?: string[];
+  viewMode?: "admin" | "client";
 }
 
 // Simple info component instead of full legend
@@ -67,7 +49,7 @@ function CalendarInfo({
   return (
     <div className="bg-white p-2 mb-2 border border-[#dadce0] rounded-lg">
       <div className="flex items-start gap-2">
-        <Info size={16} className="text-[#5f6368] mt-0.5" />
+        <Clock size={16} className="text-[#5f6368] mt-0.5" />
         <div className="text-sm text-[#5f6368]">
           {isAdmin ? (
             <>
@@ -161,7 +143,7 @@ function ExpandableTimeslots({
   top,
   height,
   onSelectTimeslot,
-  activeClientType,
+  activeClientTypes = [],
   usePercentage,
 }: {
   slots: Timeslot[];
@@ -169,7 +151,7 @@ function ExpandableTimeslots({
   top: string;
   height: string;
   onSelectTimeslot: (timeslot: Timeslot) => void;
-  activeClientType?: string;
+  activeClientTypes?: string[];
   usePercentage: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -204,10 +186,12 @@ function ExpandableTimeslots({
   // Collect all unique client types
   const clientTypes = Array.from(new Set(slots.map((slot) => slot.clientType)));
 
-  // Determine the effective client type to display (either the filtered type or the slot's type)
+  // Determine the effective client type to display - with support for multiple selected client types
   const displayClientType =
-    activeClientType && activeClientType !== "all"
-      ? activeClientType
+    activeClientTypes &&
+    activeClientTypes.length > 0 &&
+    !activeClientTypes.includes("all")
+      ? activeClientTypes[0] // Use the first active client type for display purposes
       : clientTypes[0] || "all";
 
   // Get client display name
@@ -342,7 +326,7 @@ function ExpandableTimeslots({
                     onSelectTimeslot(timeslot);
                     setExpanded(false);
                   }}
-                  activeClientType={activeClientType}
+                  activeClientTypes={activeClientTypes}
                 />
               </div>
             ))}
@@ -357,30 +341,97 @@ function ExpandableTimeslots({
 const getTimeslotsForDay = (
   date: Date,
   timeslots: Timeslot[],
-  meetingType: string
+  meetingTypes: string[],
+  clientTypes?: string[]
 ): Timeslot[] => {
-  if (!timeslots) return [];
-
-  // Simple date string comparison for better performance
-  const dateString = date.toISOString().split("T")[0];
-
-  // Filter by date first
-  const dayTimeslots = timeslots.filter((slot) => {
-    const slotDate = new Date(slot.startTime);
-    const slotDateString = slotDate.toISOString().split("T")[0];
-    return slotDateString === dateString;
-  });
-
-  // If no meeting type filter is applied, just return all timeslots for this day
-  if (!meetingType || meetingType === "all") {
-    return dayTimeslots;
+  if (!isValid(date)) {
+    console.error("Invalid date in getTimeslotsForDay:", date);
+    return [];
   }
 
-  // Otherwise, filter by meeting type
-  return dayTimeslots.filter((slot) => {
-    const slotTypes = slot.meetingTypes.split(",").map((t) => t.trim());
-    return slotTypes.includes(meetingType);
-  });
+  console.log(
+    `[Debug] getTimeslotsForDay for ${format(
+      date,
+      "yyyy-MM-dd"
+    )}, Meeting Types: ${meetingTypes?.join(",") || "all"}, Client Types: ${
+      clientTypes?.join(",") || "all"
+    }`
+  );
+
+  // Check for valid parameters
+  if (!timeslots || !Array.isArray(timeslots)) {
+    console.error(
+      `[Debug] getTimeslotsForDay received invalid timeslots:`,
+      timeslots
+    );
+    return [];
+  }
+
+  // Empty selection means "all" - this is crucial to fix the issue
+  if (!meetingTypes || meetingTypes.length === 0) {
+    meetingTypes = ["all"];
+  }
+
+  if (!clientTypes || clientTypes.length === 0) {
+    clientTypes = ["all"];
+  }
+
+  // Get start and end of the day
+  try {
+    const dayStart = startOfDay(date);
+    const dayEnd = endOfDay(date);
+
+    console.log(
+      `[Debug] Day boundaries: ${dayStart.toISOString()} to ${dayEnd.toISOString()}`
+    );
+
+    // First filter timeslots that fall within this day
+    let dayTimeslots = timeslots.filter((ts) => {
+      const tsStart = new Date(ts.startTime);
+      return isWithinInterval(tsStart, { start: dayStart, end: dayEnd });
+    });
+
+    console.log(
+      `[Debug] Found ${dayTimeslots.length} timeslots within day ${format(
+        date,
+        "yyyy-MM-dd"
+      )}`
+    );
+
+    const hasAllMeetingType = meetingTypes.includes("all");
+    const hasAllClientType = clientTypes.includes("all");
+
+    // No filtering if "all" is selected for both
+    if (hasAllMeetingType && hasAllClientType) {
+      return dayTimeslots;
+    }
+
+    // Apply OR logic filtering
+    return dayTimeslots.filter((slot) => {
+      // Client type match condition
+      const matchesClientType =
+        hasAllClientType ||
+        slot.clientType === "all" ||
+        (clientTypes && clientTypes.includes(slot.clientType));
+
+      // Meeting type match condition
+      let matchesMeetingType = hasAllMeetingType;
+      if (!hasAllMeetingType) {
+        const slotMeetingTypes = slot.meetingTypes
+          .split(",")
+          .map((t) => t.trim());
+        matchesMeetingType = slotMeetingTypes.some((type) =>
+          meetingTypes.includes(type)
+        );
+      }
+
+      // OR logic: show if it matches EITHER client type OR meeting type
+      return matchesClientType || matchesMeetingType;
+    });
+  } catch (error) {
+    console.error("Error in getTimeslotsForDay:", error);
+    return [];
+  }
 };
 
 // Component for a day's schedule
@@ -390,16 +441,16 @@ function DaySchedule({
   onSelectTimeslot,
   selectedDate,
   onSelectDate,
-  clientType,
+  activeClientTypes = [],
   isAdmin,
   meetingType,
 }: {
   day: Date;
-  timeslots: Timeslot[];
+  timeslots: Timeslot[] | Timeslot[][];
   onSelectTimeslot: (timeslot: Timeslot) => void;
   selectedDate: Date | null;
   onSelectDate?: (date: Date) => void;
-  clientType?: string;
+  activeClientTypes?: string[];
   isAdmin?: boolean;
   meetingType?: string;
 }) {
@@ -422,10 +473,32 @@ function DaySchedule({
 
   const now = getNowInIsrael();
 
+  // Ensure timeslots is properly processed as a flat array
+  const flatTimeslots = useMemo(() => {
+    if (!timeslots) return [];
+
+    // Handle both types: Timeslot[] and Timeslot[][]
+    if (Array.isArray(timeslots) && timeslots.length > 0) {
+      // Check if it's already a flat array of Timeslot objects
+      if (!Array.isArray(timeslots[0])) {
+        return timeslots as Timeslot[];
+      }
+      // If it's a nested array, flatten it
+      return (timeslots as Timeslot[][]).flat();
+    }
+
+    return [];
+  }, [timeslots]);
+
   // Filter timeslots for this day only - use the filtered data from the API
   const dayTimeslots = useMemo(() => {
-    return getTimeslotsForDay(day, timeslots, meetingType || "all");
-  }, [timeslots, day, meetingType]);
+    return getTimeslotsForDay(
+      day,
+      flatTimeslots,
+      meetingType ? [meetingType] : ["all"],
+      activeClientTypes.length > 0 ? activeClientTypes : ["all"]
+    );
+  }, [flatTimeslots, day, meetingType, activeClientTypes]);
 
   // Group timeslots by their exact start/end times
   const groupedByTime = useMemo(() => {
@@ -540,7 +613,7 @@ function DaySchedule({
                           top={`${startPercent}%`}
                           height={`${heightPercent}%`}
                           onSelectTimeslot={onSelectTimeslot}
-                          activeClientType={clientType}
+                          activeClientTypes={activeClientTypes}
                           usePercentage={true}
                         />
                       );
@@ -560,7 +633,7 @@ function DaySchedule({
                           <TimeSlot
                             timeslot={firstSlot}
                             onClick={() => onSelectTimeslot(firstSlot)}
-                            activeClientType={clientType}
+                            activeClientTypes={activeClientTypes}
                           />
                         </div>
                       );
@@ -583,11 +656,7 @@ function DaySchedule({
         className="flex-shrink-0 border-b border-[#dadce0] bg-white"
         style={{ zIndex: 40, position: "relative" }}
       >
-        <div
-          className={`text-center py-3 relative ${
-            isSameDay(day, now) ? "bg-[#e8f0fe]" : ""
-          }`}
-        >
+        <div className="text-center py-3 relative">
           <div
             className={`text-sm font-medium ${
               isSameDay(day, now) ? "text-[#1a73e8]" : "text-[#5f6368]"
@@ -680,7 +749,7 @@ function DaySchedule({
                         top={`${startPercent}%`}
                         height={`${heightPercent}%`}
                         onSelectTimeslot={onSelectTimeslot}
-                        activeClientType={clientType}
+                        activeClientTypes={activeClientTypes}
                         usePercentage={true}
                       />
                     );
@@ -717,7 +786,7 @@ function DaySchedule({
                               timeslot={timeslot}
                               onClick={() => onSelectTimeslot(timeslot)}
                               className="h-full"
-                              activeClientType={clientType}
+                              activeClientTypes={activeClientTypes}
                             />
                           </div>
                         ))}
@@ -741,7 +810,7 @@ function DaySchedule({
                       <TimeSlot
                         timeslot={firstSlot}
                         onClick={() => onSelectTimeslot(firstSlot)}
-                        activeClientType={clientType}
+                        activeClientTypes={activeClientTypes}
                       />
                     </div>
                   );
@@ -756,70 +825,301 @@ function DaySchedule({
 }
 
 export default function WeekView({
-  weekDays,
+  startDate,
   timeslots,
-  onSelectTimeslot,
-  selectedDate,
-  onSelectDate,
-  clientType = "all",
-  isAdmin = false,
-  meetingType = "all",
-  viewMode,
+  onTimeslotClick,
+  selectedMeetingTypes = ["all"],
+  activeClientTypes = ["all"],
+  viewMode = "admin",
 }: WeekViewProps) {
-  // Clear any potentially duplicated container refs
-  const containerRef = React.useRef<HTMLDivElement>(null);
+  const timeGridRef = React.useRef<HTMLDivElement>(null);
+  const [hourHeight, setHourHeight] = useState(60); // Default hour height in pixels
 
-  // Calculate available height for the time grid
-  const [availableHeight, setAvailableHeight] = useState<number>(600);
-  const { width, height } = useWindowSize();
+  // Generate days of the week
+  const days = useMemo(() => {
+    const result = [];
+    const currentDate = new Date(startDate);
 
-  useEffect(() => {
-    // Calculate available height
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      // Set the available height, minus some padding for headers, etc.
-      setAvailableHeight(Math.max(window.innerHeight - rect.top - 40, 400));
+    // Ensure startDate is valid, if not, use current date
+    if (!isValid(currentDate)) {
+      console.error("Invalid startDate provided:", startDate);
+      const today = new Date();
+
+      for (let i = 0; i < 7; i++) {
+        const day = new Date(today);
+        day.setDate(today.getDate() + i);
+        result.push(day);
+      }
+
+      return result;
     }
-  }, [width, height]);
 
-  // Use a fixed hour range for consistency
-  const startHour = 7; // 7 AM
-  const endHour = 22; // 10 PM
-  const totalHours = endHour - startHour;
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(currentDate);
+      day.setDate(currentDate.getDate() + i);
+      if (!isValid(day)) {
+        console.error("Invalid date generated:", day);
+        continue;
+      }
+      result.push(day);
+    }
 
-  // Adapt hour height based on available space
-  const hourHeight = availableHeight / totalHours;
+    return result;
+  }, [startDate]);
 
-  // Pre-filter all timeslots by meeting type if specified - this is crucial for correct filtering
+  // Hour labels from 7 AM to 10 PM
+  const hourLabels = useMemo(() => {
+    const labels = [];
+    for (let i = 7; i <= 22; i++) {
+      labels.push(`${i}:00`);
+    }
+    return labels;
+  }, []);
+
+  // Filter timeslots based on selected meeting types
   const filteredTimeslots = useMemo(() => {
-    if (meetingType && meetingType !== "all") {
-      return timeslots.filter((slot) =>
-        slot.meetingTypes.split(",").some((t) => t.trim() === meetingType)
+    if (!timeslots || timeslots.length === 0) return [];
+
+    let filtered = timeslots;
+
+    // Empty selection means "all" - this is crucial to fix the issue
+    const actualSelectedMeetingTypes =
+      !selectedMeetingTypes || selectedMeetingTypes.length === 0
+        ? ["all"]
+        : selectedMeetingTypes;
+
+    const actualClientTypes =
+      !activeClientTypes || activeClientTypes.length === 0
+        ? ["all"]
+        : activeClientTypes;
+
+    const hasAllMeetingType = actualSelectedMeetingTypes.includes("all");
+    const hasAllClientType = actualClientTypes.includes("all");
+
+    // Skip filtering if "all" is selected for both filters
+    if (hasAllMeetingType && hasAllClientType) {
+      return filtered;
+    }
+
+    // Filter by meeting types if specific meeting types are selected
+    if (!hasAllMeetingType) {
+      console.log(
+        `[Debug] Filtering by meeting types: ${actualSelectedMeetingTypes.join(
+          ","
+        )}`
+      );
+
+      filtered = filtered.filter((ts) => {
+        // Check if the timeslot has any of the selected meeting types (OR logic)
+        const meetingTypeList = ts.meetingTypes.split(",").map((t) => t.trim());
+        const hasSelectedType = meetingTypeList.some((type) =>
+          actualSelectedMeetingTypes.includes(type)
+        );
+
+        if (!hasSelectedType) {
+          console.log(
+            `[Debug] Excluding timeslot - no matching meeting type: ${ts.meetingTypes}`
+          );
+        }
+
+        return hasSelectedType;
+      });
+
+      console.log(
+        `[Debug] After meeting type filtering: ${filtered.length} timeslots remaining`
       );
     }
-    return timeslots;
-  }, [timeslots, meetingType]);
+
+    // Filter by client types if specific client types are selected
+    if (!hasAllClientType) {
+      console.log(
+        `[Debug] Filtering by client types: ${actualClientTypes.join(",")}`
+      );
+
+      filtered = filtered.filter((ts) => {
+        // If the slot is for "all" clients or matches any of the selected client types (OR logic)
+        return (
+          ts.clientType === "all" ||
+          actualClientTypes.includes(ts.clientType) ||
+          (Array.isArray(ts.clientType) &&
+            ts.clientType.some((ct) => actualClientTypes.includes(ct)))
+        );
+      });
+
+      console.log(
+        `[Debug] After client type filtering: ${filtered.length} timeslots remaining`
+      );
+    }
+
+    return filtered;
+  }, [timeslots, selectedMeetingTypes, activeClientTypes]);
+
+  // Group timeslots by day
+  const dayTimeslots = useMemo(() => {
+    const result: Record<string, Timeslot[]> = {};
+
+    days.forEach((day) => {
+      if (!isValid(day)) {
+        console.error("Invalid day in days array:", day);
+        return;
+      }
+      try {
+        const dayStr = format(day, "yyyy-MM-dd");
+        result[dayStr] = filteredTimeslots.filter((ts) => {
+          try {
+            const tsDate = new Date(ts.startTime);
+            if (!isValid(tsDate)) {
+              console.error("Invalid timeslot date:", ts.startTime);
+              return false;
+            }
+            return format(tsDate, "yyyy-MM-dd") === dayStr;
+          } catch (error) {
+            console.error("Error processing timeslot:", ts, error);
+            return false;
+          }
+        });
+      } catch (error) {
+        console.error("Error formatting day:", day, error);
+      }
+    });
+
+    return result;
+  }, [days, filteredTimeslots]);
+
+  // Group overlapping timeslots
+  const dayGroups = useMemo(() => {
+    const result: Record<string, Timeslot[][]> = {};
+
+    Object.keys(dayTimeslots).forEach((dayStr) => {
+      const slots = dayTimeslots[dayStr];
+      const groups: Timeslot[][] = [];
+
+      // Sort by start time
+      const sortedSlots = [...slots].sort(
+        (a, b) =>
+          new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+      );
+
+      // Group timeslots with the exact same start and end times
+      const timeGroups: Record<string, Timeslot[]> = {};
+
+      sortedSlots.forEach((slot) => {
+        const key = `${slot.startTime}-${slot.endTime}`;
+        if (!timeGroups[key]) {
+          timeGroups[key] = [];
+        }
+        timeGroups[key].push(slot);
+      });
+
+      // Add all groups to the result
+      Object.values(timeGroups).forEach((group) => {
+        if (group.length > 0) {
+          groups.push(group);
+        }
+      });
+
+      result[dayStr] = groups;
+    });
+
+    return result;
+  }, [dayTimeslots]);
+
+  // Get color based on meeting type
+  const getMeetingTypeColor = (type: string): string => {
+    return MEETING_TYPE_COLORS[type] || MEETING_TYPE_COLORS.default;
+  };
+
+  // Calculate the hour height based on the available space
+  useEffect(() => {
+    const calculateHourHeight = () => {
+      if (timeGridRef.current) {
+        const availableHeight = timeGridRef.current.clientHeight;
+        const totalHours = hourLabels.length;
+        const newHourHeight = Math.max(60, availableHeight / totalHours);
+        setHourHeight(newHourHeight);
+      }
+    };
+
+    calculateHourHeight();
+
+    const resizeObserver = new ResizeObserver(calculateHourHeight);
+    if (timeGridRef.current) {
+      resizeObserver.observe(timeGridRef.current);
+    }
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [hourLabels.length]);
+
+  // Generate timeslots for each day
+  const weekTimeslots = days.map((day) =>
+    getTimeslotsForDay(
+      day,
+      timeslots,
+      selectedMeetingTypes,
+      activeClientTypes || ["all"]
+    )
+  );
 
   return (
-    <div
-      ref={containerRef}
-      className="flex-1 flex flex-col h-full overflow-hidden"
-    >
-      <CalendarInfo isAdmin={isAdmin} />
+    <div className="flex flex-col h-full" dir="rtl">
+      <CalendarInfo isAdmin={viewMode === "admin"} />
       <div className="grid grid-cols-7 gap-0 border border-[#dadce0] flex-1 overflow-hidden">
-        {weekDays.map((day, i) => (
-          <DaySchedule
-            key={i}
-            day={day}
-            timeslots={filteredTimeslots}
-            onSelectTimeslot={onSelectTimeslot}
-            selectedDate={selectedDate}
-            onSelectDate={onSelectDate}
-            clientType={clientType}
-            isAdmin={isAdmin}
-            meetingType={meetingType}
-          />
-        ))}
+        {days.map((day, i) => {
+          if (!isValid(day)) {
+            return (
+              <div key={i} className="bg-red-50 p-2 text-red-500 text-xs">
+                Invalid date error
+              </div>
+            );
+          }
+
+          let dayFormatStr;
+          try {
+            dayFormatStr = format(day, "yyyy-MM-dd");
+          } catch (error) {
+            console.error("Error formatting day:", day, error);
+            dayFormatStr = "";
+          }
+
+          // Get timeslots for this day that match the meeting type filter
+          let dayTimeslots: Timeslot[] = [];
+          if (dayGroups[dayFormatStr]) {
+            // Flatten the groups of timeslots for this day
+            const allDayTimeslots = dayGroups[dayFormatStr].flat();
+
+            // Filter by meeting type if needed
+            if (
+              selectedMeetingTypes.length > 0 &&
+              selectedMeetingTypes.includes("all")
+            ) {
+              dayTimeslots = allDayTimeslots;
+            } else {
+              dayTimeslots = allDayTimeslots.filter((slot) => {
+                // Check if this slot has the selected meeting type
+                const meetingTypes =
+                  slot.meetingTypes?.split(",").map((t) => t.trim()) || [];
+                return meetingTypes.some((type) =>
+                  selectedMeetingTypes.includes(type)
+                );
+              });
+            }
+          }
+
+          return (
+            <DaySchedule
+              key={i}
+              day={day}
+              timeslots={dayTimeslots}
+              onSelectTimeslot={onTimeslotClick || (() => {})}
+              selectedDate={day}
+              activeClientTypes={activeClientTypes || ["all"]}
+              isAdmin={viewMode === "admin"}
+              meetingType={selectedMeetingTypes.join(",")}
+            />
+          );
+        })}
       </div>
     </div>
   );
