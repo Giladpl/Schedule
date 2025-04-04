@@ -35,11 +35,8 @@ export default function Calendar() {
 
   // States
   const [currentDate, setCurrentDate] = useState<Date>(() => {
-    // Check if there are timeslots in April 2025 (based on the data we have)
-    const targetDate = new Date("2025-04-04");
-
-    // Default to current date if no specific data needed
-    return targetDate;
+    // Use the current date instead of April 2025
+    return getNowInIsrael();
   });
   const [view, setView] = useState<"week" | "month">("week");
   const [selectedTimeslot, setSelectedTimeslot] = useState<Timeslot | null>(
