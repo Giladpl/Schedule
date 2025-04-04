@@ -866,6 +866,108 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Add debug endpoint to create sample timeslots
+  app.get("/api/debug/create-sample-timeslots", async (req, res) => {
+    try {
+      const numSamples = parseInt(req.query.count as string) || 5;
+      console.log(`[Debug] Creating ${numSamples} sample timeslots`);
+
+      // Clear existing timeslots first
+      try {
+        await storage.clearTimeslots();
+        console.log("[Debug] Cleared existing timeslots");
+      } catch (error) {
+        console.error("[Debug] Error clearing timeslots:", error);
+      }
+
+      // Create sample timeslots for today and tomorrow
+      const createdTimeslots = [];
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      // Create timeslots for today
+      for (let i = 0; i < numSamples; i++) {
+        const startHour = 9 + i;
+        const startTime = new Date(today);
+        startTime.setHours(startHour, 0, 0, 0);
+
+        const endTime = new Date(startTime);
+        endTime.setHours(startHour + 1, 0, 0, 0);
+
+        try {
+          const timeslot = await storage.createTimeslot({
+            startTime,
+            endTime,
+            clientType: "all",
+            meetingTypes: "consultation,therapy,coaching",
+            isAvailable: true,
+            googleEventId: `sample-event-${i}`,
+            parentEventId: null,
+          });
+
+          console.log(
+            `[Debug] Created sample timeslot: ${JSON.stringify(timeslot)}`
+          );
+          createdTimeslots.push(timeslot);
+        } catch (error) {
+          console.error(`[Debug] Error creating sample timeslot ${i}:`, error);
+        }
+      }
+
+      // Create a timeslot for tomorrow
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      try {
+        const tomorrowStartTime = new Date(tomorrow);
+        tomorrowStartTime.setHours(10, 0, 0, 0);
+
+        const tomorrowEndTime = new Date(tomorrowStartTime);
+        tomorrowEndTime.setHours(11, 0, 0, 0);
+
+        const tomorrowTimeslot = await storage.createTimeslot({
+          startTime: tomorrowStartTime,
+          endTime: tomorrowEndTime,
+          clientType: "all",
+          meetingTypes: "consultation,therapy,coaching",
+          isAvailable: true,
+          googleEventId: "sample-event-tomorrow",
+          parentEventId: null,
+        });
+
+        console.log(
+          `[Debug] Created tomorrow timeslot: ${JSON.stringify(
+            tomorrowTimeslot
+          )}`
+        );
+        createdTimeslots.push(tomorrowTimeslot);
+      } catch (error) {
+        console.error(`[Debug] Error creating tomorrow timeslot:`, error);
+      }
+
+      // Verify the timeslots were created
+      const allTimeslots = await storage.getTimeslots();
+      console.log(
+        `[Debug] Total timeslots after creation: ${allTimeslots.length}`
+      );
+
+      // Return success with the created timeslots
+      res.json({
+        success: true,
+        message: `Created ${createdTimeslots.length} sample timeslots`,
+        timeslots: createdTimeslots,
+        allTimeslotsCount: allTimeslots.length,
+      });
+    } catch (error) {
+      console.error("[Debug] Error creating sample timeslots:", error);
+      res.status(500).json({
+        success: false,
+        error: `Failed to create sample timeslots: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      });
+    }
+  });
+
   console.log("API routes registered successfully");
 }
 
