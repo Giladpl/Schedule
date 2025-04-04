@@ -1,10 +1,16 @@
+import { fetchClientData } from "@/lib/calendarService";
 import { cn } from "@/lib/utils";
 import { Timeslot } from "@shared/schema";
+import { useQuery } from "@tanstack/react-query";
 import { Calendar, Clock, Phone, Users, Video } from "lucide-react";
 import React, { useMemo } from "react";
 
 // פונקציה ליצירת צבע עקבי מחרוזת (hash-based)
 export function stringToColor(str: string): string {
+  if (!str || typeof str !== "string") {
+    return "#6366f1"; // Default indigo color
+  }
+
   // רשימת צבעים בסיסיים עם ניגודיות גבוהה מאוד - צבעים חדים ושונים זה מזה
   const baseColors = [
     "#1a73e8", // כחול Google כהה
@@ -65,25 +71,6 @@ export const CLIENT_TYPE_COLORS: Record<string, string> = {
   "3": "#fbbc04", // מכירת עוגות
 };
 
-// Client type display names
-export const CLIENT_TYPE_NAMES: Record<string, string> = {
-  all: "כל הלקוחות",
-  new_customer: "לקוח חדש",
-  "0": "לקוח חדש",
-  "1": "פולי אחים",
-  "2": "מדריכים+",
-  "3": "מכירת עוגות",
-};
-
-// Map client types to allowed meeting types
-export const CLIENT_ALLOWED_MEETING_TYPES: Record<string, string[]> = {
-  all: ["טלפון", "זום", "פגישה"],
-  "0": ["טלפון", "זום", "פגישה"], // לקוח חדש
-  "1": ["טלפון", "פגישה"], // פולי אחים
-  "2": ["טלפון", "זום"], // מדריכים+
-  "3": ["טלפון", "פגישה"], // מכירת עוגות
-};
-
 // Meeting type to icon mapping
 export const MEETING_TYPE_ICONS: Record<string, React.ReactNode> = {
   טלפון: <Phone size={14} className="text-white" />,
@@ -115,6 +102,13 @@ export function TimeSlot({
   activeClientTypes = [],
   ...props
 }: TimeSlotProps) {
+  // Fetch client data from the server
+  const { data: clientData } = useQuery({
+    queryKey: ["/api/client-data"],
+    queryFn: fetchClientData,
+    staleTime: 60000, // 1 minute
+  });
+
   // Check if "all" is included in client types or if the array is empty
   // Empty selection means "all"
   const hasAllClientType =
@@ -174,11 +168,81 @@ export function TimeSlot({
       types = [timeslot.clientType];
     } else {
       // When "all" is selected, show ribbons for all client types
-      types = ["0", "1", "2", "3"]; // All available client types
+      // Use client types from API data if available
+      if (clientData?.clients && clientData.clients.length > 0) {
+        types = clientData.clients.map((client) =>
+          client.id !== undefined ? `${client.id}` : client.type
+        );
+      } else {
+        // Fallback to basic types if no API data
+        types = ["0", "1", "2", "3"];
+      }
     }
 
     return types;
-  }, [timeslot.clientType, activeClientTypes, hasAllClientType]);
+  }, [timeslot.clientType, activeClientTypes, hasAllClientType, clientData]);
+
+  // Function to get client type display name
+  const getClientTypeName = (type: string): string => {
+    if (type === "all") return "כל הלקוחות";
+
+    if (clientData?.clients) {
+      // First try to match by ID if it's a numeric string
+      if (!isNaN(Number(type))) {
+        const client = clientData.clients.find((c) => c.id === Number(type));
+        if (client) return client.type;
+      }
+
+      // Then try to match by type name
+      const client = clientData.clients.find((c) => c.type === type);
+      if (client) return client.type;
+    }
+
+    // Fallback for known types
+    const fallbackNames: Record<string, string> = {
+      "0": "לקוח חדש",
+      "1": "פולי אחים",
+      "2": "מדריכים+",
+      "3": "מכירת עוגות",
+      new_customer: "לקוח חדש",
+    };
+
+    return fallbackNames[type] || type;
+  };
+
+  // Function to get allowed meeting types for a client type
+  const getAllowedMeetingTypes = (clientType: string): string[] => {
+    if (clientType === "all") return ["טלפון", "זום", "פגישה"];
+
+    if (clientData?.clients) {
+      // Try to find client by ID if it's a numeric string
+      if (!isNaN(Number(clientType))) {
+        const client = clientData.clients.find(
+          (c) => c.id === Number(clientType)
+        );
+        if (client && client.meetings) {
+          return Object.keys(client.meetings);
+        }
+      }
+
+      // Try to find client by type name
+      const client = clientData.clients.find((c) => c.type === clientType);
+      if (client && client.meetings) {
+        return Object.keys(client.meetings);
+      }
+    }
+
+    // Fallback for known client types
+    const fallbackAllowedTypes: Record<string, string[]> = {
+      "0": ["טלפון", "זום", "פגישה"], // לקוח חדש
+      "1": ["טלפון", "פגישה"], // פולי אחים
+      "2": ["טלפון", "זום"], // מדריכים+
+      "3": ["טלפון", "פגישה"], // מכירת עוגות
+      new_customer: ["טלפון", "זום", "פגישה"],
+    };
+
+    return fallbackAllowedTypes[clientType] || [];
+  };
 
   // This ensures meeting types are properly displayed and filtered based on client type
   const filteredMeetingTypes = useMemo(() => {
@@ -192,13 +256,13 @@ export function TimeSlot({
 
     // Add all meeting types allowed for each selected client type
     activeClientTypes.forEach((clientType) => {
-      const allowedTypes = CLIENT_ALLOWED_MEETING_TYPES[clientType] || [];
+      const allowedTypes = getAllowedMeetingTypes(clientType);
       allowedTypes.forEach((type) => allowedMeetingTypes.add(type));
     });
 
     // Only keep meeting types that are allowed for the selected client types
     return meetingTypesList.filter((type) => allowedMeetingTypes.has(type));
-  }, [meetingTypesList, activeClientTypes, hasAllClientType]);
+  }, [meetingTypesList, activeClientTypes, hasAllClientType, clientData]);
 
   return (
     <div
@@ -225,7 +289,7 @@ export function TimeSlot({
         ) : (
           clientTypes.map((type, index) => {
             const color = CLIENT_TYPE_COLORS[type] || stringToColor(type);
-            const name = CLIENT_TYPE_NAMES[type] || type;
+            const name = getClientTypeName(type);
             const height =
               clientTypes.length > 1 ? `${100 / clientTypes.length}%` : "100%";
             const top =

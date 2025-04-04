@@ -177,7 +177,6 @@ export default function Sidebar({
   const legendClientTypes = useMemo(() => {
     if (!data || !data.clients) return [];
     return [
-      { id: "all", type: "הכל" },
       ...data.clients.map((client) => ({
         id: client.id !== undefined ? `${client.id}` : client.type,
         type: client.type,
