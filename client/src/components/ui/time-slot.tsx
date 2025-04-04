@@ -75,6 +75,15 @@ export const CLIENT_TYPE_NAMES: Record<string, string> = {
   "3": "מכירת עוגות",
 };
 
+// Map client types to allowed meeting types
+export const CLIENT_ALLOWED_MEETING_TYPES: Record<string, string[]> = {
+  all: ["טלפון", "זום", "פגישה"],
+  "0": ["טלפון", "זום", "פגישה"], // לקוח חדש
+  "1": ["טלפון", "פגישה"], // פולי אחים
+  "2": ["טלפון", "זום"], // מדריכים+
+  "3": ["טלפון", "פגישה"], // מכירת עוגות
+};
+
 // Meeting type to icon mapping
 export const MEETING_TYPE_ICONS: Record<string, React.ReactNode> = {
   טלפון: <Phone size={14} className="text-white" />,
@@ -163,15 +172,33 @@ export function TimeSlot({
     } else if (timeslot.clientType !== "all") {
       // If no filter but timeslot has a specific client type
       types = [timeslot.clientType];
+    } else {
+      // When "all" is selected, show ribbons for all client types
+      types = ["0", "1", "2", "3"]; // All available client types
     }
 
     return types;
   }, [timeslot.clientType, activeClientTypes, hasAllClientType]);
 
-  // This ensures meeting types are properly displayed
+  // This ensures meeting types are properly displayed and filtered based on client type
   const filteredMeetingTypes = useMemo(() => {
-    return meetingTypesList;
-  }, [meetingTypesList]);
+    // If "all" client type is selected, show all meeting types
+    if (hasAllClientType || activeClientTypes.includes("all")) {
+      return meetingTypesList;
+    }
+
+    // Filter meeting types based on selected client types
+    const allowedMeetingTypes = new Set<string>();
+
+    // Add all meeting types allowed for each selected client type
+    activeClientTypes.forEach((clientType) => {
+      const allowedTypes = CLIENT_ALLOWED_MEETING_TYPES[clientType] || [];
+      allowedTypes.forEach((type) => allowedMeetingTypes.add(type));
+    });
+
+    // Only keep meeting types that are allowed for the selected client types
+    return meetingTypesList.filter((type) => allowedMeetingTypes.has(type));
+  }, [meetingTypesList, activeClientTypes, hasAllClientType]);
 
   return (
     <div
