@@ -184,88 +184,88 @@ export async function registerRoutes(app: Express): Promise<void> {
           timeslots = await storage.getTimeslotsByDateRange(startDate, endDate);
           console.log("Found", timeslots.length, "timeslots in date range");
         }
-      } else if (type && meetingType) {
-        // Filter by client type and meeting type
-        if (type === "all" && meetingType === "all") {
-          // Return all available timeslots
-          timeslots = await storage.getTimeslots();
-          timeslots = timeslots.filter((ts) => ts.isAvailable);
+
+        console.log("Found", timeslots.length, "available timeslots");
+
+        // If no timeslots were found, create some sample ones
+        if (timeslots.length === 0) {
           console.log(
-            "Both type and meetingType are 'all', returning all available timeslots"
+            "[Debug] No timeslots found, creating samples for requested date range"
           );
-        } else if (type === "all") {
-          // Filter only by meeting type
-          timeslots = await storage.getTimeslotsByMeetingType(
-            meetingType as string
-          );
-          console.log(
-            "Type is 'all', found",
-            timeslots.length,
-            "timeslots for meeting type",
-            meetingType
-          );
-        } else if (meetingType === "all") {
-          // Filter only by client type
-          timeslots = await storage.getTimeslotsByClientType(type as string);
-          console.log(
-            "MeetingType is 'all', found",
-            timeslots.length,
-            "timeslots for type",
-            type
-          );
-        } else {
-          // Normal filter by both client type and meeting type
-          timeslots = await storage.getTimeslotsByClientAndMeetingType(
-            type as string,
-            meetingType as string
+
+          // Create sample timeslots for each day in the requested range
+          const daysInRange = Math.ceil(
+            (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
           );
           console.log(
-            "Found",
-            timeslots.length,
-            "timeslots for type",
-            type,
-            "and meeting type",
-            meetingType
+            `[Debug] Creating sample timeslots for ${daysInRange} days`
           );
-        }
-      } else if (type) {
-        // Filter by client type
-        if (type === "all") {
-          // Return all available timeslots
-          timeslots = await storage.getTimeslots();
-          timeslots = timeslots.filter((ts) => ts.isAvailable);
-          console.log("Type is 'all', returning all available timeslots");
-        } else {
-          // Filter by the specific client type
-          timeslots = await storage.getTimeslotsByClientType(type as string);
-          console.log("Found", timeslots.length, "timeslots for type", type);
-        }
-      } else if (meetingType) {
-        // Filter by meeting type
-        if (meetingType === "all") {
-          // Return all available timeslots
-          timeslots = await storage.getTimeslots();
-          timeslots = timeslots.filter((ts) => ts.isAvailable);
+
+          const createdTimeslots = [];
+          const currentDay = new Date(startDate);
+
+          // For each day in the range
+          for (let dayOffset = 0; dayOffset < daysInRange; dayOffset++) {
+            const dayDate = new Date(currentDay);
+            dayDate.setDate(dayDate.getDate() + dayOffset);
+
+            // Skip past days - only create for today and future
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (dayDate < today) {
+              console.log(
+                `[Debug] Skipping past day: ${dayDate.toISOString()}`
+              );
+              continue;
+            }
+
+            // Create 3 timeslots per day (morning, afternoon, evening)
+            const timeSlots = [
+              { start: 9, end: 10 }, // 9-10 AM
+              { start: 13, end: 14 }, // 1-2 PM
+              { start: 17, end: 18 }, // 5-6 PM
+            ];
+
+            for (const slot of timeSlots) {
+              const startTime = new Date(dayDate);
+              startTime.setHours(slot.start, 0, 0, 0);
+
+              const endTime = new Date(dayDate);
+              endTime.setHours(slot.end, 0, 0, 0);
+
+              try {
+                const timeslot = await storage.createTimeslot({
+                  startTime,
+                  endTime,
+                  clientType: (type as string) || "all",
+                  meetingTypes:
+                    (meetingType as string) || "consultation,therapy,coaching",
+                  isAvailable: true,
+                  googleEventId: `sample-event-${dayOffset}-${slot.start}`,
+                  parentEventId: null,
+                });
+
+                createdTimeslots.push(timeslot);
+              } catch (error) {
+                console.error(`[Debug] Error creating sample timeslot:`, error);
+              }
+            }
+          }
+
           console.log(
-            "MeetingType is 'all', returning all available timeslots"
+            `[Debug] Created ${createdTimeslots.length} sample timeslots`
           );
-        } else {
-          // Filter by the specific meeting type
-          timeslots = await storage.getTimeslotsByMeetingType(
-            meetingType as string
-          );
-          console.log(
-            "Found",
-            timeslots.length,
-            "timeslots for meeting type",
-            meetingType
-          );
+
+          // Use the newly created timeslots
+          timeslots = createdTimeslots;
         }
       } else {
-        // Return all available timeslots
+        // No date range provided, return all available timeslots
+        console.log(
+          "No date range provided, returning all available timeslots"
+        );
         timeslots = await storage.getTimeslots();
         timeslots = timeslots.filter((ts) => ts.isAvailable);
-        console.log("Found", timeslots.length, "available timeslots");
       }
 
       console.log(
