@@ -410,8 +410,12 @@ export default function Calendar() {
 
     console.log(`[Debug] User selected client types: ${values.join(", ")}`);
 
+    // If the values array is empty, default to "all"
+    if (values.length === 0) {
+      values = ["all"];
+    }
     // Check if "all" is added while other options exist
-    if (values.includes("all") && values.length > 1) {
+    else if (values.includes("all") && values.length > 1) {
       // If current selection doesn't include "all" but new selection does, just use "all"
       if (!clientTypes.includes("all")) {
         values = ["all"];
@@ -426,7 +430,7 @@ export default function Calendar() {
     setClientTypes(values);
 
     // When client types change, we should update fullClientTypes accordingly
-    const hasAllClientType = values.includes("all") || values.length === 0;
+    const hasAllClientType = values.includes("all");
 
     if (hasAllClientType) {
       setFullClientTypes([]);
@@ -470,7 +474,7 @@ export default function Calendar() {
     }
 
     // Update URL with wouter navigation
-    if (values.length === 0 || (values.length === 1 && values[0] === "all")) {
+    if (values.length === 1 && values[0] === "all") {
       navigate(viewMode === "admin" ? "/admin" : "/calendar");
     } else {
       // Join all selected values with commas for the URL
@@ -487,8 +491,12 @@ export default function Calendar() {
 
   // Handle meeting type change
   const handleMeetingTypeChange = (values: string[]) => {
+    // If the values array is empty, default to "all"
+    if (values.length === 0) {
+      values = ["all"];
+    }
     // Check if "all" is added while other options exist
-    if (values.includes("all") && values.length > 1) {
+    else if (values.includes("all") && values.length > 1) {
       // If current selection doesn't include "all" but new selection does, just use "all"
       if (!meetingTypes.includes("all")) {
         values = ["all"];
