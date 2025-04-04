@@ -404,7 +404,7 @@ function DaySchedule({
                   className="flex items-center"
                   style={{ height: `${hourHeight}px` }}
                 >
-                  <div className="w-16 text-xs text-gray-500 z-10 bg-white bg-opacity-90 px-2 py-1 sticky left-0">
+                  <div className="w-16 text-xs text-gray-500 z-10 bg-white bg-opacity-90 px-2 py-1 sticky left-0 font-medium">
                     {`${hour}:00`}
                   </div>
                 </div>
@@ -529,8 +529,11 @@ function DaySchedule({
               {hours.map((hour, index) => (
                 <div
                   key={index}
-                  className="text-right pr-2 text-xs text-[#5f6368] relative -top-3"
-                  style={{ height: `${hourHeight}px` }}
+                  className="text-right pr-2 text-xs text-[#5f6368] font-medium"
+                  style={{
+                    height: `${hourHeight}px`,
+                    paddingTop: "4px",
+                  }}
                 >
                   {`${hour}:00`}
                 </div>
