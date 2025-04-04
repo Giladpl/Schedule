@@ -221,7 +221,7 @@ export default function CalendarHeader({
             </Button>
 
             {settingsOpen && (
-              <div className="absolute left-1/2 transform -translate-x-1/2 mt-2 w-48 bg-white rounded-md shadow-lg z-50 overflow-hidden">
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-[100] border border-gray-200">
                 <div className="py-1">
                   {isAdmin && (
                     <button

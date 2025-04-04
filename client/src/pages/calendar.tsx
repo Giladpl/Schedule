@@ -59,7 +59,10 @@ export default function Calendar() {
   } | null>(null);
 
   // Determine if admin mode or client mode
-  const isAdmin = location === "/admin";
+  const pathIsAdmin = location === "/admin";
+
+  // TEMPORARY: always set isAdmin to true until proper login is implemented
+  const isAdmin = true;
 
   // Determine client type based on query params or default to new_customer for regular users
   const queryType = searchParams.get("type");
