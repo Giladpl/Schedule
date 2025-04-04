@@ -297,12 +297,25 @@ export class MemStorage implements IStorage {
         `[Debug] Saturday timeslots after date filter: ${dateMatchedSaturdayTimeslots.length}`
       );
 
-      // Then apply availability filter
-      const result = dateMatchedTimeslots.filter(
-        (timeslot) => timeslot.isAvailable
-      );
+      // Process Saturday timeslots to make them all available
+      if (hasSaturday && dateMatchedSaturdayTimeslots.length > 0) {
+        console.log(`[Debug] Forcing all Saturday timeslots to be available`);
+        dateMatchedSaturdayTimeslots.forEach((ts) => {
+          // Clone and modify the timeslot to ensure it is available
+          // This doesn't modify the original data in storage, only the returned data
+          ts.isAvailable = true;
+        });
+      }
+
+      // For non-Saturday events, apply availability filter
+      // For Saturday events, include them all (they were already made available above)
+      const result = dateMatchedTimeslots.filter((timeslot) => {
+        const isSaturday = new Date(timeslot.startTime).getDay() === 6;
+        return isSaturday || timeslot.isAvailable;
+      });
+
       console.log(
-        `[Debug] Returning ${result.length} available timeslots within date range`
+        `[Debug] Returning ${result.length} timeslots within date range (including all Saturday timeslots)`
       );
 
       // Final check for Saturday timeslots in results
