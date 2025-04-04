@@ -342,20 +342,23 @@ function DaySchedule({
   const isMobile = width < 768; // Mobile breakpoint
   const isSmallScreen = width < 1024; // Small screen breakpoint
 
+  // Fixed hour range - from 7 AM to 10 PM (7-22)
+  const START_HOUR = 7;
+  const END_HOUR = 22;
+  const TOTAL_HOURS = END_HOUR - START_HOUR + 1;
+
   // Calculate available height for the time grid
   const availableHeight = height - 180; // Approx header + info section height
 
-  // Adjust number of visible hours based on available height
-  const visibleHours = Math.max(
-    8,
-    Math.min(17, Math.floor(availableHeight / 64))
+  // Calculate adaptive hour height based on available space (min 48px, prefer 64px)
+  const hourHeight = Math.max(
+    48,
+    Math.min(64, Math.floor(availableHeight / TOTAL_HOURS))
   );
-  const startHour = 6; // 6 AM
-  const endHour = startHour + visibleHours; // Adaptive end hour
 
   const hours = useMemo(() => {
-    return Array.from({ length: visibleHours }, (_, i) => i + startHour);
-  }, [visibleHours]);
+    return Array.from({ length: TOTAL_HOURS }, (_, i) => i + START_HOUR);
+  }, []);
 
   const today = getNowInIsrael();
 
@@ -392,12 +395,16 @@ function DaySchedule({
             {`${getDayName(day)} ${getDayOfMonth(day)}`}
           </h2>
 
-          <div className="relative flex-1">
+          <div className="relative flex-1 overflow-auto hide-scrollbar">
             {/* Time markers */}
             <div className="absolute left-0 top-0 bottom-0 w-16 z-10">
               {hours.map((hour, index) => (
-                <div key={index} className="h-16 flex items-center">
-                  <div className="w-16 text-xs text-gray-500 z-10 bg-white bg-opacity-90 px-2 py-1">
+                <div
+                  key={index}
+                  className="flex items-center"
+                  style={{ height: `${hourHeight}px` }}
+                >
+                  <div className="w-16 text-xs text-gray-500 z-10 bg-white bg-opacity-90 px-2 py-1 sticky left-0">
                     {`${hour}:00`}
                   </div>
                 </div>
@@ -405,11 +412,12 @@ function DaySchedule({
             </div>
 
             {/* Grid lines */}
-            <div className="absolute left-16 right-0 top-0 bottom-0">
+            <div className="absolute left-16 right-0 top-0">
               {hours.map((hour, index) => (
                 <div
                   key={index}
-                  className="h-16 border-t border-gray-200"
+                  className="border-t border-gray-200"
+                  style={{ height: `${hourHeight}px` }}
                 ></div>
               ))}
             </div>
@@ -423,11 +431,14 @@ function DaySchedule({
                 startTime.getHours() + startTime.getMinutes() / 60;
               const endHourFraction =
                 endTime.getHours() + endTime.getMinutes() / 60;
-              const top = (startHourFraction - startHour) * 64;
-              const height = (endHourFraction - startHourFraction) * 64;
+              const top = (startHourFraction - START_HOUR) * hourHeight;
+              const height = (endHourFraction - startHourFraction) * hourHeight;
 
               // Only show if within visible range
-              if (startHourFraction >= endHour || endHourFraction <= startHour)
+              if (
+                startHourFraction >= END_HOUR + 1 ||
+                endHourFraction <= START_HOUR
+              )
                 return null;
 
               if (slots.length > 1) {
@@ -474,7 +485,7 @@ function DaySchedule({
   return (
     <div className="flex-1 flex flex-col h-full">
       {/* Day header */}
-      <div className="border-b border-[#dadce0] flex-shrink-0">
+      <div className="border-b border-[#dadce0] flex-shrink-0 relative z-10">
         <div
           className={`text-center py-3 calendar-column ${
             isSameDay(day, today) ? "bg-[#e8f0fe]" : ""
@@ -500,117 +511,142 @@ function DaySchedule({
       </div>
 
       {/* Time grid */}
-      <div className="flex-1 relative">
-        {/* Hour markers */}
-        <div className="w-16 absolute left-0 top-0 bottom-0 border-r border-[#dadce0] bg-white z-10">
-          {hours.map((hour, index) => (
-            <div
-              key={index}
-              className="h-16 text-right pr-2 text-xs text-[#5f6368] relative -top-2"
-            >
-              {`${hour}:00`}
-            </div>
-          ))}
-        </div>
-
-        {/* Grid and timeslots */}
-        <div className="ml-16 absolute right-0 top-0 bottom-0 border-r border-[#dadce0] calendar-column">
-          {/* Horizontal grid lines */}
-          {hours.map((hour, index) => (
-            <div key={index} className="h-16 border-t border-[#dadce0]"></div>
-          ))}
-
-          {/* Render the timeslots */}
-          {Object.entries(groupedByTime).map(([timeKey, slots], groupIdx) => {
-            const firstSlot = slots[0];
-            const startTime = new Date(firstSlot.startTime);
-            const endTime = new Date(firstSlot.endTime);
-            const startHourFraction =
-              startTime.getHours() + startTime.getMinutes() / 60;
-            const endHourFraction =
-              endTime.getHours() + endTime.getMinutes() / 60;
-            const top = (startHourFraction - startHour) * 64;
-            const height = (endHourFraction - startHourFraction) * 64;
-
-            // Only show if within visible range
-            if (startHourFraction >= endHour || endHourFraction <= startHour)
-              return null;
-
-            // For small screens or many options, use the expandable component
-            if (slots.length > 1 && (isSmallScreen || slots.length > 3)) {
-              return (
-                <ExpandableTimeslots
-                  key={timeKey}
-                  slots={slots}
-                  timeKey={timeKey}
-                  top={top}
-                  height={height}
-                  onSelectTimeslot={onSelectTimeslot}
-                  activeClientType={clientType}
-                />
-              );
-            }
-
-            // For larger screens with 2-3 options, show side by side
-            if (slots.length > 1) {
-              return (
+      <div className="flex-1 relative overflow-hidden">
+        {/* Create a fixed container with scrolling */}
+        <div className="absolute inset-0 overflow-auto hide-scrollbar">
+          {/* Content container with proper height to ensure scrolling */}
+          <div
+            style={{
+              minHeight: "100%",
+              /* Set a minimum width to ensure all columns are visible */
+              minWidth: "100%",
+              /* Full content height based on hour count and height */
+              height: `${hourHeight * TOTAL_HOURS + 20}px`,
+            }}
+          >
+            {/* Hour markers */}
+            <div className="w-16 absolute left-0 top-0 border-r border-[#dadce0] bg-white z-10 sticky">
+              {hours.map((hour, index) => (
                 <div
-                  key={timeKey}
-                  style={{
-                    position: "absolute",
-                    top: `${top}px`,
-                    left: "2px",
-                    right: "2px",
-                    height: `${height}px`,
-                    zIndex: 10,
-                    display: "flex",
-                    gap: "4px",
-                  }}
+                  key={index}
+                  className="text-right pr-2 text-xs text-[#5f6368] relative -top-3"
+                  style={{ height: `${hourHeight}px` }}
                 >
-                  {slots.map((timeslot, slotIdx) => (
+                  {`${hour}:00`}
+                </div>
+              ))}
+            </div>
+
+            {/* Grid and timeslots */}
+            <div className="ml-16 absolute right-0 top-0 border-r border-[#dadce0] calendar-column">
+              {/* Horizontal grid lines */}
+              {hours.map((hour, index) => (
+                <div
+                  key={index}
+                  className="border-t border-[#dadce0]"
+                  style={{ height: `${hourHeight}px` }}
+                ></div>
+              ))}
+
+              {/* Render the timeslots */}
+              {Object.entries(groupedByTime).map(
+                ([timeKey, slots], groupIdx) => {
+                  const firstSlot = slots[0];
+                  const startTime = new Date(firstSlot.startTime);
+                  const endTime = new Date(firstSlot.endTime);
+                  const startHourFraction =
+                    startTime.getHours() + startTime.getMinutes() / 60;
+                  const endHourFraction =
+                    endTime.getHours() + endTime.getMinutes() / 60;
+                  const top = (startHourFraction - START_HOUR) * hourHeight;
+                  const height =
+                    (endHourFraction - startHourFraction) * hourHeight;
+
+                  // Only show if within visible range
+                  if (
+                    startHourFraction >= END_HOUR + 1 ||
+                    endHourFraction <= START_HOUR
+                  )
+                    return null;
+
+                  // For small screens or many options, use the expandable component
+                  if (slots.length > 1 && (isSmallScreen || slots.length > 3)) {
+                    return (
+                      <ExpandableTimeslots
+                        key={timeKey}
+                        slots={slots}
+                        timeKey={timeKey}
+                        top={top}
+                        height={height}
+                        onSelectTimeslot={onSelectTimeslot}
+                        activeClientType={clientType}
+                      />
+                    );
+                  }
+
+                  // For larger screens with 2-3 options, show side by side
+                  if (slots.length > 1) {
+                    return (
+                      <div
+                        key={timeKey}
+                        style={{
+                          position: "absolute",
+                          top: `${top}px`,
+                          left: "2px",
+                          right: "2px",
+                          height: `${height}px`,
+                          zIndex: 10,
+                          display: "flex",
+                          gap: "4px",
+                        }}
+                      >
+                        {slots.map((timeslot, slotIdx) => (
+                          <div
+                            key={`${timeKey}_${slotIdx}`}
+                            className="flex-1 border border-gray-200 rounded-lg shadow-sm"
+                            style={{
+                              backgroundColor:
+                                slotIdx % 2 === 0
+                                  ? "rgba(249, 250, 251, 0.5)"
+                                  : "white",
+                            }}
+                          >
+                            <TimeSlot
+                              timeslot={timeslot}
+                              onClick={() => onSelectTimeslot(timeslot)}
+                              className="h-full"
+                              activeClientType={clientType}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }
+
+                  // Single option, render normally
+                  return (
                     <div
-                      key={`${timeKey}_${slotIdx}`}
-                      className="flex-1 border border-gray-200 rounded-lg shadow-sm"
+                      key={timeKey}
                       style={{
-                        backgroundColor:
-                          slotIdx % 2 === 0
-                            ? "rgba(249, 250, 251, 0.5)"
-                            : "white",
+                        position: "absolute",
+                        top: `${top}px`,
+                        left: "2px",
+                        right: "2px",
+                        height: `${height}px`,
+                        zIndex: 10,
                       }}
                     >
                       <TimeSlot
-                        timeslot={timeslot}
-                        onClick={() => onSelectTimeslot(timeslot)}
-                        className="h-full"
+                        timeslot={firstSlot}
+                        onClick={() => onSelectTimeslot(firstSlot)}
                         activeClientType={clientType}
                       />
                     </div>
-                  ))}
-                </div>
-              );
-            }
-
-            // Single option, render normally
-            return (
-              <div
-                key={timeKey}
-                style={{
-                  position: "absolute",
-                  top: `${top}px`,
-                  left: "2px",
-                  right: "2px",
-                  height: `${height}px`,
-                  zIndex: 10,
-                }}
-              >
-                <TimeSlot
-                  timeslot={firstSlot}
-                  onClick={() => onSelectTimeslot(firstSlot)}
-                  activeClientType={clientType}
-                />
-              </div>
-            );
-          })}
+                  );
+                }
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -27,6 +27,21 @@
   flex-direction: column;
 }
 
+/* Fix for the today highlight */
+.border-b {
+  position: relative;
+  z-index: 5;
+}
+
+.calendar-column {
+  position: relative;
+}
+
+/* Make sure the time slots appear above the grid but below headers */
+.w-16.absolute.left-0.top-0 {
+  z-index: 20;
+}
+
 /* Hide scrollbars but maintain scroll functionality */
 .hide-scrollbar {
   -ms-overflow-style: none; /* IE and Edge */
@@ -35,6 +50,14 @@
 
 .hide-scrollbar::-webkit-scrollbar {
   display: none; /* Chrome, Safari and Opera */
+}
+
+/* Sticky positioning for time markers */
+.sticky {
+  position: sticky;
+  left: 0;
+  background-color: white;
+  z-index: 15;
 }
 
 /* Expandable timeslots styling */
