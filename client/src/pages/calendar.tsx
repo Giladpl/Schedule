@@ -178,30 +178,39 @@ export default function Calendar() {
 
   const goToPreviousPeriod = () => {
     const today = getNowInIsrael();
+    // Normalize today to start of day
+    const normalizedToday = new Date(today);
+    normalizedToday.setHours(0, 0, 0, 0);
 
     if (view === "week") {
-      // Calculate the previous week's start date
-      const previousWeekDate = addDays(currentDate, -7);
+      // Use startOfWeek for consistent comparison
+      const currentWeekStart = startOfWeek(currentDate);
+      const previousWeekStart = addDays(currentWeekStart, -7);
 
       // If previous week's start date is before today, go to the week containing today
-      if (previousWeekDate < today) {
+      if (previousWeekStart < normalizedToday) {
         setCurrentDate(today);
       } else {
-        setCurrentDate(previousWeekDate);
+        setCurrentDate(previousWeekStart);
       }
     } else {
-      // For month view
-      const prevMonth = new Date(currentDate);
-      prevMonth.setMonth(prevMonth.getMonth() - 1);
+      // For month view - use first day of months for proper comparison
+      const prevMonthStart = new Date(
+        currentDate.getFullYear(),
+        currentDate.getMonth() - 1,
+        1
+      );
+      const todayMonthStart = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        1
+      );
 
       // If previous month is before current month (containing today), go to current month
-      const currentMonth = new Date(today);
-      currentMonth.setDate(1); // First day of current month
-
-      if (prevMonth < currentMonth) {
+      if (prevMonthStart < todayMonthStart) {
         setCurrentDate(today);
       } else {
-        setCurrentDate(prevMonth);
+        setCurrentDate(prevMonthStart);
       }
     }
   };
@@ -257,6 +266,61 @@ export default function Calendar() {
     }
   }, [location]);
 
+  // Calculate whether the previous button should be disabled (can't go back before today)
+  const isPreviousDisabled = (): boolean => {
+    const today = getNowInIsrael();
+    // Normalize today to start of day
+    const normalizedToday = new Date(today);
+    normalizedToday.setHours(0, 0, 0, 0);
+
+    if (view === "week") {
+      // Use startOfWeek for consistent comparison
+      const currentWeekStart = startOfWeek(currentDate);
+      const previousWeekStart = addDays(currentWeekStart, -7);
+
+      // For debugging
+      console.log("Previous navigation check:", {
+        currentDate: currentDate.toISOString(),
+        currentWeekStart: currentWeekStart.toISOString(),
+        previousWeekStart: previousWeekStart.toISOString(),
+        today: normalizedToday.toISOString(),
+        wouldBeDisabled: previousWeekStart < normalizedToday,
+      });
+
+      // Disable if previous week would start before today
+      return previousWeekStart < normalizedToday;
+    } else {
+      // For month view - get first day of months for proper comparison
+      const currentMonthStart = new Date(
+        currentDate.getFullYear(),
+        currentDate.getMonth(),
+        1
+      );
+      const prevMonthStart = new Date(
+        currentDate.getFullYear(),
+        currentDate.getMonth() - 1,
+        1
+      );
+      const todayMonthStart = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        1
+      );
+
+      // For debugging
+      console.log("Previous navigation check:", {
+        currentDate: currentDate.toISOString(),
+        currentMonthStart: currentMonthStart.toISOString(),
+        prevMonthStart: prevMonthStart.toISOString(),
+        todayMonthStart: todayMonthStart.toISOString(),
+        wouldBeDisabled: prevMonthStart < todayMonthStart,
+      });
+
+      // Disable if previous month would be before current month containing today
+      return prevMonthStart < todayMonthStart;
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col h-screen">
       <CalendarHeader
@@ -267,6 +331,7 @@ export default function Calendar() {
         onToday={goToToday}
         currentView={view}
         onViewChange={setView}
+        isPreviousDisabled={isPreviousDisabled()}
       />
 
       <main className="flex-1 flex overflow-auto">
