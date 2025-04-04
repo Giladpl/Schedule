@@ -133,12 +133,52 @@ export class MemStorage implements IStorage {
     startDate: Date,
     endDate: Date
   ): Promise<Timeslot[]> {
-    return Array.from(this.timeslots.values()).filter(
+    const allTimeslots = Array.from(this.timeslots.values());
+    console.log(
+      `[Debug] getTimeslotsByDateRange: Looking in ${allTimeslots.length} total timeslots`
+    );
+    console.log(
+      `[Debug] Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`
+    );
+
+    if (allTimeslots.length > 0) {
+      // Log the date range of the first few timeslots to understand what's in storage
+      const sampleTimeslots = allTimeslots.slice(
+        0,
+        Math.min(3, allTimeslots.length)
+      );
+      console.log(`[Debug] Sample timeslots in storage:`);
+      sampleTimeslots.forEach((ts, i) => {
+        console.log(
+          `[Debug] Timeslot ${i}: ${new Date(
+            ts.startTime
+          ).toISOString()} to ${new Date(
+            ts.endTime
+          ).toISOString()}, isAvailable: ${ts.isAvailable}`
+        );
+      });
+    }
+
+    // First filter only by date range without availability check
+    const dateMatchedTimeslots = allTimeslots.filter(
       (timeslot) =>
         new Date(timeslot.startTime) >= startDate &&
-        new Date(timeslot.endTime) <= endDate &&
-        timeslot.isAvailable
+        new Date(timeslot.endTime) <= endDate
     );
+
+    console.log(
+      `[Debug] Found ${dateMatchedTimeslots.length} timeslots matching date range before availability check`
+    );
+
+    // Then apply availability filter
+    const result = dateMatchedTimeslots.filter(
+      (timeslot) => timeslot.isAvailable
+    );
+    console.log(
+      `[Debug] Returning ${result.length} available timeslots within date range`
+    );
+
+    return result;
   }
 
   async getTimeslotsByClientType(clientType: string): Promise<Timeslot[]> {
