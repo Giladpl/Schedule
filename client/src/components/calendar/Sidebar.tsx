@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CLIENT_TYPE_COLORS, stringToColor } from "@/components/ui/time-slot";
 import { useToast } from "@/hooks/use-toast";
 import {
   fetchClientData,
@@ -206,20 +207,29 @@ export default function Sidebar({
         <h2 className="text-sm font-medium text-[#5f6368] mb-4">LEGEND</h2>
         <div className="space-y-3">
           <h3 className="text-xs font-medium text-[#5f6368]">Meeting Types:</h3>
-          <div className="flex items-center">
-            <div className="w-5 h-5 bg-[#34a853] rounded-sm mr-3 flex items-center justify-center text-white">
+          <div className="flex items-center mb-2">
+            <div
+              className="w-5 h-5 rounded-sm mr-3 flex items-center justify-center text-white"
+              style={{ backgroundColor: "#34a853" }}
+            >
               <Phone size={14} />
             </div>
             <span className="text-sm">טלפון (Phone)</span>
           </div>
-          <div className="flex items-center">
-            <div className="w-5 h-5 bg-[#4285f4] rounded-sm mr-3 flex items-center justify-center text-white">
+          <div className="flex items-center mb-2">
+            <div
+              className="w-5 h-5 rounded-sm mr-3 flex items-center justify-center text-white"
+              style={{ backgroundColor: "#4285f4" }}
+            >
               <Video size={14} />
             </div>
             <span className="text-sm">זום (Zoom)</span>
           </div>
-          <div className="flex items-center">
-            <div className="w-5 h-5 bg-[#ea4335] rounded-sm mr-3 flex items-center justify-center text-white">
+          <div className="flex items-center mb-2">
+            <div
+              className="w-5 h-5 rounded-sm mr-3 flex items-center justify-center text-white"
+              style={{ backgroundColor: "#ea4335" }}
+            >
               <Users size={14} />
             </div>
             <span className="text-sm">פגישה (In-person)</span>
@@ -228,18 +238,38 @@ export default function Sidebar({
           <h3 className="text-xs font-medium text-[#5f6368] mt-3">
             Client Types:
           </h3>
-          <div className="flex items-center">
-            <div className="w-4 h-4 border-l-4 border-l-[#1a73e8] bg-white rounded-sm mr-3"></div>
-            <span className="text-sm">Regular Client</span>
-          </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 border-l-4 border-l-[#fbbc04] bg-white rounded-sm mr-3"></div>
-            <span className="text-sm">VIP Client</span>
-          </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 border-l-4 border-l-[#34a853] bg-white rounded-sm mr-3"></div>
-            <span className="text-sm">Quick Session</span>
-          </div>
+          {clientData?.clients && (
+            <>
+              {/* Always show "All Clients" option */}
+              <div className="flex items-center">
+                <div
+                  className="w-5 h-5 rounded-md mr-3 flex items-center justify-center"
+                  style={{ backgroundColor: "#6366f1" }}
+                ></div>
+                <span className="text-sm">
+                  {getClientTypeDisplayName("all")}
+                </span>
+              </div>
+
+              {/* Show first 3 clients from the loaded data */}
+              {clientData.clients.slice(0, 3).map((client, idx) => {
+                // Generate color dynamically using the same function as TimeSlot
+                const color =
+                  CLIENT_TYPE_COLORS[client.type] || stringToColor(client.type);
+                return (
+                  <div key={idx} className="flex items-center mt-1">
+                    <div
+                      className="w-5 h-5 rounded-md mr-3"
+                      style={{ backgroundColor: color }}
+                    ></div>
+                    <span className="text-sm">
+                      {getClientTypeDisplayName(client.type)}
+                    </span>
+                  </div>
+                );
+              })}
+            </>
+          )}
         </div>
       </div>
 

@@ -5,7 +5,7 @@ import { Calendar, Clock, Phone, Users, Video } from "lucide-react";
 import React, { useMemo } from "react";
 
 // פונקציה ליצירת צבע עקבי מחרוזת (hash-based)
-function stringToColor(str: string): string {
+export function stringToColor(str: string): string {
   // רשימת צבעים בסיסיים בהירים עם ניגודיות טובה
   const baseColors = [
     "#4285F4", // כחול גוגל
@@ -45,14 +45,17 @@ export const CLIENT_TYPE_COLORS: Record<string, string> = {
 };
 
 // Meeting type to icon mapping
-const MEETING_TYPE_ICONS: Record<string, React.ReactNode> = {
+export const MEETING_TYPE_ICONS: Record<string, React.ReactNode> = {
   טלפון: <Phone size={14} className="text-white" />,
   זום: <Video size={14} className="text-white" />,
   פגישה: <Users size={14} className="text-white" />,
 };
 
 // Meeting type to color and hebrew display name mapping
-const MEETING_TYPE_STYLES: Record<string, { color: string; name: string }> = {
+export const MEETING_TYPE_STYLES: Record<
+  string,
+  { color: string; name: string }
+> = {
   טלפון: { color: "#34a853", name: "טלפון" },
   זום: { color: "#4285f4", name: "זום" },
   פגישה: { color: "#ea4335", name: "פגישה" },
