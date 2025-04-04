@@ -22,17 +22,24 @@ function useWindowSize() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    // Handler to call on window resize
     const handleResize = () => {
+      // Set window width/height to state
       setWindowSize({
         width: window.innerWidth,
         height: window.innerHeight,
       });
     };
 
+    // Add event listener
     window.addEventListener("resize", handleResize);
-    handleResize(); // Call once to set initial size
+
+    // Call handler right away so state gets updated with initial window size
+    handleResize();
+
+    // Remove event listener on cleanup
     return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  }, []); // Empty array ensures that effect is only run on mount and unmount
 
   return windowSize;
 }
@@ -331,13 +338,24 @@ function DaySchedule({
   onSelectDate?: (date: Date) => void;
   clientType?: string;
 }) {
-  const { width } = useWindowSize();
+  const { width, height } = useWindowSize();
   const isMobile = width < 768; // Mobile breakpoint
   const isSmallScreen = width < 1024; // Small screen breakpoint
 
+  // Calculate available height for the time grid
+  const availableHeight = height - 180; // Approx header + info section height
+
+  // Adjust number of visible hours based on available height
+  const visibleHours = Math.max(
+    8,
+    Math.min(17, Math.floor(availableHeight / 64))
+  );
+  const startHour = 6; // 6 AM
+  const endHour = startHour + visibleHours; // Adaptive end hour
+
   const hours = useMemo(() => {
-    return Array.from({ length: 17 }, (_, i) => i + 6); // 6 AM to 10 PM (extended from 8 PM)
-  }, []);
+    return Array.from({ length: visibleHours }, (_, i) => i + startHour);
+  }, [visibleHours]);
 
   const today = getNowInIsrael();
 
@@ -368,34 +386,49 @@ function DaySchedule({
 
   if (isMobile) {
     return (
-      <div className="flex-1 flex flex-col overflow-auto">
-        <div className="mt-4 px-2">
+      <div className="flex-1 flex flex-col h-full">
+        <div className="px-2 flex-1 flex flex-col">
           <h2 className="text-lg font-bold mb-2">
             {`${getDayName(day)} ${getDayOfMonth(day)}`}
           </h2>
 
-          <div className="relative">
-            {hours.map((hour, index) => (
-              <div key={index} className="flex border-t border-gray-200 py-1">
-                <div className="w-16 text-xs text-gray-500 py-2">
-                  {`${hour}:00`}
+          <div className="relative flex-1">
+            {/* Time markers */}
+            <div className="absolute left-0 top-0 bottom-0 w-16 z-10">
+              {hours.map((hour, index) => (
+                <div key={index} className="h-16 flex items-center">
+                  <div className="w-16 text-xs text-gray-500 z-10 bg-white bg-opacity-90 px-2 py-1">
+                    {`${hour}:00`}
+                  </div>
                 </div>
-                <div className="flex-1 min-h-8"></div>
-              </div>
-            ))}
+              ))}
+            </div>
+
+            {/* Grid lines */}
+            <div className="absolute left-16 right-0 top-0 bottom-0">
+              {hours.map((hour, index) => (
+                <div
+                  key={index}
+                  className="h-16 border-t border-gray-200"
+                ></div>
+              ))}
+            </div>
 
             {/* Render timeslots for the day */}
             {Object.entries(groupedByTime).map(([timeKey, slots], groupIdx) => {
               const firstSlot = slots[0];
               const startTime = new Date(firstSlot.startTime);
               const endTime = new Date(firstSlot.endTime);
-              const startHour =
+              const startHourFraction =
                 startTime.getHours() + startTime.getMinutes() / 60;
-              const endHour = endTime.getHours() + endTime.getMinutes() / 60;
-              const top = (startHour - 6) * 64;
-              const height = (endHour - startHour) * 64;
+              const endHourFraction =
+                endTime.getHours() + endTime.getMinutes() / 60;
+              const top = (startHourFraction - startHour) * 64;
+              const height = (endHourFraction - startHourFraction) * 64;
 
-              if (startHour >= 23 || endHour <= 6) return null;
+              // Only show if within visible range
+              if (startHourFraction >= endHour || endHourFraction <= startHour)
+                return null;
 
               if (slots.length > 1) {
                 return (
@@ -439,9 +472,9 @@ function DaySchedule({
 
   // DESKTOP VIEW
   return (
-    <div className="flex-1 flex flex-col overflow-auto">
+    <div className="flex-1 flex flex-col h-full">
       {/* Day header */}
-      <div className="border-b border-[#dadce0]">
+      <div className="border-b border-[#dadce0] flex-shrink-0">
         <div
           className={`text-center py-3 calendar-column ${
             isSameDay(day, today) ? "bg-[#e8f0fe]" : ""
@@ -469,7 +502,7 @@ function DaySchedule({
       {/* Time grid */}
       <div className="flex-1 relative">
         {/* Hour markers */}
-        <div className="w-16 absolute left-0 top-0 bottom-0 border-r border-[#dadce0]">
+        <div className="w-16 absolute left-0 top-0 bottom-0 border-r border-[#dadce0] bg-white z-10">
           {hours.map((hour, index) => (
             <div
               key={index}
@@ -481,7 +514,7 @@ function DaySchedule({
         </div>
 
         {/* Grid and timeslots */}
-        <div className="ml-16 flex-1 border-r border-[#dadce0] relative calendar-column">
+        <div className="ml-16 absolute right-0 top-0 bottom-0 border-r border-[#dadce0] calendar-column">
           {/* Horizontal grid lines */}
           {hours.map((hour, index) => (
             <div key={index} className="h-16 border-t border-[#dadce0]"></div>
@@ -492,14 +525,16 @@ function DaySchedule({
             const firstSlot = slots[0];
             const startTime = new Date(firstSlot.startTime);
             const endTime = new Date(firstSlot.endTime);
-            const startHour =
+            const startHourFraction =
               startTime.getHours() + startTime.getMinutes() / 60;
-            const endHour = endTime.getHours() + endTime.getMinutes() / 60;
-            const top = (startHour - 6) * 64;
-            const height = (endHour - startHour) * 64;
+            const endHourFraction =
+              endTime.getHours() + endTime.getMinutes() / 60;
+            const top = (startHourFraction - startHour) * 64;
+            const height = (endHourFraction - startHourFraction) * 64;
 
-            // Only render if the slot falls within our visible hours
-            if (startHour >= 23 || endHour <= 6) return null;
+            // Only show if within visible range
+            if (startHourFraction >= endHour || endHourFraction <= startHour)
+              return null;
 
             // For small screens or many options, use the expandable component
             if (slots.length > 1 && (isSmallScreen || slots.length > 3)) {
@@ -617,7 +652,7 @@ export function WeekView({
     };
 
     return (
-      <div className="flex-1 flex flex-col overflow-auto">
+      <div className="flex-1 flex flex-col h-full">
         <CalendarInfo />
 
         {/* Mobile date selector */}
@@ -655,9 +690,9 @@ export function WeekView({
 
   // Desktop view
   return (
-    <div className="w-full flex flex-col">
+    <div className="h-full w-full flex flex-col">
       <CalendarInfo />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex-1 flex overflow-hidden">
         {weekDays.map((day, index) => (
           <div key={index} className="flex-1 min-w-0 min-h-0 overflow-hidden">
             <DaySchedule

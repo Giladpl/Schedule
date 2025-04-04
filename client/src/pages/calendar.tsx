@@ -436,7 +436,7 @@ export default function Calendar() {
         isPreviousDisabled={isPreviousDisabled()}
       />
 
-      <main className="flex-1 flex overflow-auto">
+      <main className="flex-1 flex overflow-hidden h-full">
         <Sidebar
           clientType={clientType}
           onClientTypeChange={handleClientTypeChange}
@@ -469,9 +469,9 @@ export default function Calendar() {
             <p className="text-[#5f6368]">Loading calendar...</p>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col overflow-auto">
+          <div className="flex-1 flex flex-col h-full overflow-hidden">
             {view === "week" ? (
-              <div className="calendar-container w-full">
+              <div className="calendar-container w-full h-full overflow-hidden">
                 <WeekView
                   weekDays={weekDays}
                   timeslots={timeslots}
@@ -482,7 +482,7 @@ export default function Calendar() {
                 />
               </div>
             ) : (
-              <div className="calendar-container w-full">
+              <div className="calendar-container w-full h-full overflow-hidden">
                 <MonthView
                   currentDate={currentDate}
                   timeslots={timeslots}

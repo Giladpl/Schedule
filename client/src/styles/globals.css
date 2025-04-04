@@ -1,0 +1,25 @@
+/* Add these styles to ensure full height usage */
+html,
+body,
+#root,
+#__next {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Add a class for the calendar container */
+.calendar-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Hide scrollbar for "hide-scrollbar" class but allow scrolling */
+.hide-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
