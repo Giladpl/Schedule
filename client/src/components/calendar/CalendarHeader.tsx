@@ -1,7 +1,17 @@
 import { Button } from "@/components/ui/button";
-import { formatDateRange } from "@/lib/utils";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { he } from "date-fns/locale";
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Gauge,
+  Settings,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import ReactDOM from "react-dom";
 
 interface CalendarHeaderProps {
   currentViewStart: Date;
@@ -14,6 +24,7 @@ interface CalendarHeaderProps {
   isPreviousDisabled?: boolean;
   isAdmin?: boolean;
   onViewModeToggle?: () => void;
+  currentViewMode?: "admin" | "client";
 }
 
 export default function CalendarHeader({
@@ -27,288 +38,234 @@ export default function CalendarHeader({
   isPreviousDisabled = false,
   isAdmin = false,
   onViewModeToggle,
+  currentViewMode = "admin",
 }: CalendarHeaderProps) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const settingsRef = useRef<HTMLDivElement>(null);
-  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
+  const [showSettings, setShowSettings] = useState(false);
+  const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(
+    null
+  );
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Update menu position when settings button is clicked
   const updateMenuPosition = () => {
-    if (settingsRef.current) {
-      const rect = settingsRef.current.getBoundingClientRect();
+    if (settingsButtonRef.current) {
+      const rect = settingsButtonRef.current.getBoundingClientRect();
       setMenuPosition({
         top: rect.bottom + window.scrollY,
-        right: window.innerWidth - rect.right + window.scrollX,
+        left: rect.right - 180 + window.scrollX, // Position menu to the left of button
       });
     }
   };
 
-  // Toggle settings menu
   const toggleSettings = () => {
-    if (!settingsOpen) {
-      updateMenuPosition();
-    }
-    setSettingsOpen(!settingsOpen);
+    updateMenuPosition();
+    setShowSettings(!showSettings);
   };
 
-  // Close dropdown when clicking outside
   useEffect(() => {
+    // Create portal container
+    const div = document.createElement("div");
+    div.style.position = "absolute";
+    div.style.top = "0";
+    div.style.left = "0";
+    div.style.width = "100%";
+    document.body.appendChild(div);
+    setPortalContainer(div);
+
     function handleClickOutside(event: MouseEvent) {
       if (
-        settingsRef.current &&
-        !settingsRef.current.contains(event.target as Node)
+        settingsButtonRef.current &&
+        !settingsButtonRef.current.contains(event.target as Node) &&
+        portalContainer &&
+        !portalContainer.contains(event.target as Node)
       ) {
-        setSettingsOpen(false);
+        setShowSettings(false);
       }
     }
 
     document.addEventListener("mousedown", handleClickOutside);
+
+    // Handle window resize
+    const handleResize = () => updateMenuPosition();
+    window.addEventListener("resize", handleResize);
+
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("resize", handleResize);
+      if (portalContainer) document.body.removeChild(portalContainer);
     };
-  }, []);
+  }, [portalContainer]);
 
-  // Update position on window resize
-  useEffect(() => {
-    if (settingsOpen) {
-      const handleResize = () => updateMenuPosition();
-      window.addEventListener("resize", handleResize);
-      return () => window.removeEventListener("resize", handleResize);
-    }
-  }, [settingsOpen]);
+  // Format the date range for display
+  const formattedDate =
+    currentView === "week"
+      ? `${format(currentViewStart, "dd MMM", { locale: he })} - ${format(
+          currentViewEnd,
+          "dd MMM",
+          { locale: he }
+        )}, ${format(currentViewStart, "yyyy")}`
+      : format(currentViewStart, "MMMM yyyy", { locale: he });
+
+  // Toggle view between week and month
+  const toggleView = () => {
+    onViewChange(currentView === "week" ? "month" : "week");
+  };
 
   return (
-    <header className="border-b border-[#dadce0] py-4 px-6 flex justify-between items-center sticky top-0 bg-white z-10">
-      <div className="flex items-center">
-        <h1 className="text-xl font-medium text-[#202124] font-google-sans">
-          {isAdmin ? "Admin Panel" : "Meeting Scheduler"}
-        </h1>
-        <div className="ml-6 hidden md:flex">
-          <Button
-            variant="ghost"
-            onClick={() => onViewChange("week")}
-            className={`px-4 py-2 text-sm rounded-md hover:bg-[#f1f3f4] ${
-              currentView === "week"
-                ? "text-[#1a73e8] font-medium"
-                : "text-[#5f6368]"
-            }`}
-          >
-            Week
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => onViewChange("month")}
-            className={`px-4 py-2 text-sm rounded-md hover:bg-[#f1f3f4] ${
-              currentView === "month"
-                ? "text-[#1a73e8] font-medium"
-                : "text-[#5f6368]"
-            }`}
-          >
-            Month
-          </Button>
-        </div>
+    <header className="border-b border-[#dadce0] p-2 md:p-4 flex flex-col md:flex-row items-center justify-between sticky top-0 bg-white z-10">
+      <div className="flex items-center space-x-4 w-full md:w-auto justify-between md:justify-start">
+        <Button
+          onClick={onPrevious}
+          disabled={isPreviousDisabled}
+          variant="ghost"
+          size="icon"
+          aria-label="Previous"
+          className={cn(
+            "rounded-full h-10 w-10",
+            isPreviousDisabled && "opacity-50 cursor-not-allowed"
+          )}
+        >
+          <ChevronRight className="h-5 w-5" />
+        </Button>
+
+        <Button
+          onClick={onNext}
+          variant="ghost"
+          size="icon"
+          aria-label="Next"
+          className="rounded-full h-10 w-10"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </Button>
+
+        <span className="text-lg font-medium text-[#3c4043] hidden md:inline">
+          {formattedDate}
+        </span>
+
+        <Button
+          onClick={onToday}
+          variant="outline"
+          className="ml-2 h-9 bg-[#1a73e8] text-white hover:bg-[#1765cc] hover:text-white border-none"
+        >
+          היום
+        </Button>
       </div>
 
-      <div className="flex items-center space-x-4">
-        {/* Navigation Controls */}
-        <div className="flex items-center space-x-2 mr-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onToday}
-            className="text-sm text-[#1a73e8] border-[#dadce0] hover:bg-[#f1f3f4] px-3"
-          >
-            Today
-          </Button>
+      <span className="text-lg font-medium text-[#3c4043] md:hidden mt-2">
+        {formattedDate}
+      </span>
 
-          <div className="flex border rounded overflow-hidden">
+      <div className="flex items-center mt-4 md:mt-0">
+        <Button
+          onClick={toggleView}
+          variant="ghost"
+          className="h-9 text-[#3c4043] hover:bg-[#f1f3f4]"
+        >
+          {currentView === "week" ? "חודש" : "שבוע"}
+        </Button>
+
+        {isAdmin && (
+          <div className="relative">
             <Button
-              variant="ghost"
-              size="icon"
-              onClick={onPrevious}
-              disabled={isPreviousDisabled}
-              className={`h-9 w-9 rounded-none border-r border-[#dadce0] hover:bg-[#f1f3f4] ${
-                isPreviousDisabled ? "opacity-30 cursor-not-allowed" : ""
-              }`}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-[#5f6368]"
-              >
-                <path d="m15 18-6-6 6-6" />
-              </svg>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onNext}
-              className="h-9 w-9 rounded-none hover:bg-[#f1f3f4]"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-[#5f6368]"
-              >
-                <path d="m9 18 6-6-6-6" />
-              </svg>
-            </Button>
-          </div>
-        </div>
-
-        {/* Current date range display */}
-        <div className="font-medium text-[#3c4043] mr-4">
-          {formatDateRange(currentViewStart, currentViewEnd)}
-        </div>
-
-        <div className="mr-6 flex items-center">
-          <span className="text-sm text-[#5f6368] mr-2">Time Zone:</span>
-          <div className="relative inline-block">
-            <Button
-              variant="ghost"
-              className="flex items-center text-sm font-medium text-[#3c4043] hover:text-[#1a73e8] p-0"
-            >
-              <span>Israel (Asia/Jerusalem)</span>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="ml-1"
-              >
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </Button>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="p-2 rounded-full hover:bg-[#f1f3f4]"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-[#5f6368]"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 16v-4" />
-              <path d="M12 8h.01" />
-            </svg>
-          </Button>
-
-          {/* Settings Dropdown */}
-          <div ref={settingsRef}>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`p-2 rounded-full hover:bg-[#f1f3f4] flex items-center ${
-                settingsOpen ? "bg-[#f1f3f4]" : ""
-              }`}
               onClick={toggleSettings}
+              variant="ghost"
+              size="icon"
+              className="rounded-full h-10 w-10 ml-2"
+              ref={settingsButtonRef}
               aria-label="הגדרות"
-              aria-expanded={settingsOpen}
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={`text-[#5f6368] ${
-                  settingsOpen ? "text-[#1a73e8]" : ""
-                }`}
-              >
-                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
+              <Settings className="h-5 w-5" />
             </Button>
-          </div>
-        </div>
-      </div>
 
-      {/* Portal for dropdown menu to ensure it appears on top of everything */}
-      {settingsOpen &&
-        createPortal(
-          <div
-            className="dropdown-menu-portal"
-            style={{
-              position: "absolute",
-              top: `${menuPosition.top}px`,
-              right: `${menuPosition.right}px`,
-              zIndex: 99999,
-              backgroundColor: "white",
-              borderRadius: "0.375rem",
-              boxShadow:
-                "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-              border: "1px solid #e5e7eb",
-              width: "16rem",
-            }}
-          >
-            <ul className="py-1">
-              {isAdmin && (
-                <li>
-                  <button
-                    onClick={() => {
-                      if (onViewModeToggle) {
+            {showSettings &&
+              portalContainer &&
+              ReactDOM.createPortal(
+                <div
+                  className="fixed z-[9999] bg-white shadow-lg rounded-md p-2 border border-gray-200"
+                  style={{
+                    top: `${menuPosition.top}px`,
+                    right: "24px", // Fixed right position
+                    width: "200px",
+                  }}
+                >
+                  {isAdmin && onViewModeToggle && (
+                    <Button
+                      onClick={() => {
                         onViewModeToggle();
-                        setSettingsOpen(false);
-                      }
-                    }}
-                    className="w-full text-right px-4 py-3 text-sm text-blue-600 hover:bg-blue-50 font-medium block"
-                  >
-                    {window.location.pathname.includes("admin")
-                      ? "מעבר לתצוגת לקוחות"
-                      : "מעבר לתצוגת אדמין"}
-                  </button>
-                </li>
+                        setShowSettings(false);
+                      }}
+                      variant="ghost"
+                      className="w-full justify-start text-sm font-normal px-3 h-9 hover:bg-gray-100"
+                    >
+                      <Gauge className="h-4 w-4 mr-2" />
+                      {currentViewMode === "admin"
+                        ? "מעבר לתצוגת לקוחות"
+                        : "מעבר לתצוגת אדמין"}
+                    </Button>
+                  )}
+                </div>,
+                portalContainer
               )}
-              <li>
-                <button className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 block">
-                  הגדרות
-                </button>
-              </li>
-              <li>
-                <button className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 block">
-                  עזרה
-                </button>
-              </li>
-            </ul>
-          </div>,
-          document.body
+          </div>
         )}
+
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="rounded-full h-10 w-10 ml-2 md:hidden"
+            >
+              <CalendarDays className="h-5 w-5" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="right" className="w-[300px] sm:w-[400px]">
+            <div className="py-4">
+              <div className="text-lg font-medium mb-4">הגדרות לוח שנה</div>
+              <div className="space-y-4">
+                <div>
+                  <Button
+                    onClick={() => {
+                      onViewChange("week");
+                      document
+                        .querySelector("[data-radix-collection-item]")
+                        ?.dispatchEvent(
+                          new KeyboardEvent("keydown", {
+                            key: "Escape",
+                            bubbles: true,
+                          })
+                        );
+                    }}
+                    variant={currentView === "week" ? "default" : "outline"}
+                    className="w-full"
+                  >
+                    תצוגת שבוע
+                  </Button>
+                </div>
+                <div>
+                  <Button
+                    onClick={() => {
+                      onViewChange("month");
+                      document
+                        .querySelector("[data-radix-collection-item]")
+                        ?.dispatchEvent(
+                          new KeyboardEvent("keydown", {
+                            key: "Escape",
+                            bubbles: true,
+                          })
+                        );
+                    }}
+                    variant={currentView === "month" ? "default" : "outline"}
+                    className="w-full"
+                  >
+                    תצוגת חודש
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
     </header>
   );
 }

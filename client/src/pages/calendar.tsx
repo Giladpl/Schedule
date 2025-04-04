@@ -58,16 +58,17 @@ export default function Calendar() {
     meetingType?: string;
   } | null>(null);
 
-  // Determine if admin mode or client mode
-  const pathIsAdmin = location === "/admin";
+  // Instead of using the URL path to determine admin mode, use a state variable
+  // This allows toggling between views without changing URLs
+  const [viewMode, setViewMode] = useState<"admin" | "client">("admin");
 
-  // TEMPORARY: always set isAdmin to true until proper login is implemented
+  // Always set isAdmin to true - the admin permission is always there
   const isAdmin = true;
 
   // Determine client type based on query params or default to new_customer for regular users
   const queryType = searchParams.get("type");
   const [clientType, setClientType] = useState<string>(
-    isAdmin ? queryType || "all" : queryType || "new_customer"
+    viewMode === "admin" ? queryType || "all" : queryType || "new_customer"
   );
 
   // Add a useEffect to fetch client data for matching clientType
@@ -82,7 +83,7 @@ export default function Calendar() {
 
   // Match client types dynamically based on query param
   useEffect(() => {
-    if (clientData?.clients && queryType && !isAdmin) {
+    if (clientData?.clients && queryType && viewMode === "client") {
       let matchedClient = null;
 
       // First try to match by numeric ID if queryType is a number
@@ -114,23 +115,28 @@ export default function Calendar() {
         // Set fullClientType to queryType as fallback to ensure filtering still works
         setFullClientType(queryType);
       }
-    } else if (!queryType || isAdmin) {
+    } else if (!queryType || viewMode === "admin") {
       setFullClientType(null);
     }
-  }, [clientData, queryType, isAdmin]);
+  }, [clientData, queryType, viewMode]);
 
   // Add a new effect to update document title based on client type
   useEffect(() => {
-    if (!isAdmin && fullClientType) {
+    if (viewMode === "client" && fullClientType) {
       document.title = `Schedule - ${getClientTypeDisplayName(fullClientType)}`;
-    } else if (!isAdmin && queryType) {
+    } else if (viewMode === "client" && queryType) {
       document.title = `Schedule - ${getClientTypeDisplayName(queryType)}`;
-    } else if (isAdmin) {
+    } else if (viewMode === "admin") {
       document.title = "Admin Panel - Schedule";
     } else {
       document.title = "Schedule Appointment";
     }
-  }, [isAdmin, queryType, fullClientType]);
+  }, [viewMode, queryType, fullClientType]);
+
+  // Update client type when view mode changes
+  useEffect(() => {
+    setClientType(viewMode === "admin" ? "all" : queryType || "new_customer");
+  }, [viewMode, queryType]);
 
   const [meetingType, setMeetingType] = useState<string>("all");
   const [isSyncing, setIsSyncing] = useState(false);
@@ -166,6 +172,16 @@ export default function Calendar() {
 
     syncGoogleCalendar();
   }, [toast]);
+
+  // Add handler for toggling between admin and client views
+  const handleViewModeToggle = () => {
+    // Toggle between admin and client view
+    setViewMode(viewMode === "admin" ? "client" : "admin");
+    console.log(
+      "Toggled view mode to:",
+      viewMode === "admin" ? "client" : "admin"
+    );
+  };
 
   // Fetch timeslots
   const {
@@ -233,132 +249,45 @@ export default function Calendar() {
     }
   }, [error, toast]);
 
-  // Force loading to false after 10 seconds as a fallback
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
-
-    if (isLoading) {
-      timeoutId = setTimeout(() => {
-        console.log("Loading timed out - forcing content display");
-        queryClient.setQueryData(
-          [
-            "timeslots",
-            {
-              startDate: startDate.toISOString(),
-              endDate: endDate.toISOString(),
-              clientType: fullClientType || clientType,
-              meetingType,
-            },
-          ],
-          []
-        );
-      }, 10000);
-    }
-
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [isLoading, startDate, endDate, clientType, meetingType, fullClientType]);
-
-  // Refetch timeslots when synchronization completes
-  useEffect(() => {
-    if (!isSyncing && timeslots.length === 0) {
-      refetch();
-    }
-  }, [isSyncing, timeslots.length, refetch]);
-
-  // Create booking mutation
+  // Booking mutations
   const { mutate, isPending: isBooking } = useMutation({
-    mutationFn: async (formData: z.infer<typeof bookingFormSchema>) => {
-      if (!selectedTimeslot) {
-        throw new Error("No timeslot selected");
-      }
-
-      // Store booking details for confirmation
-      setBookingDetails({
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        meetingType: formData.meetingType,
-      });
-
-      // Find meeting type duration
-      let duration = 30; // Default duration
-      const meetingType = formData.meetingType || "consultation";
-
-      // Create the booking with the correct type
-      return createBooking({
-        ...formData,
-        timeslotId: selectedTimeslot.id,
-        duration,
-        meetingType,
-      });
-    },
-    onSuccess: () => {
+    mutationFn: createBooking,
+    onSuccess: (data) => {
       setBookingModalOpen(false);
+      setBookingDetails(data);
       setConfirmationModalOpen(true);
+
+      // Refetch timeslots to update availability
       queryClient.invalidateQueries({ queryKey: ["timeslots"] });
     },
     onError: (error) => {
-      console.error("Booking error:", error);
+      console.error("Error creating booking:", error);
       toast({
-        title: "Booking Failed",
-        description:
-          "There was an error creating your booking. Please try again.",
+        title: "Booking Error",
+        description: "Failed to create booking. Please try again.",
         variant: "destructive",
       });
     },
   });
 
-  // Navigation functions
+  // Navigation handlers
   const goToNextPeriod = () => {
     if (view === "week") {
-      setCurrentDate(addDays(currentDate, 7));
+      setCurrentDate((prev) => addDays(prev, 7));
     } else {
-      const nextMonth = new Date(currentDate);
-      nextMonth.setMonth(nextMonth.getMonth() + 1);
-      setCurrentDate(nextMonth);
+      setCurrentDate(
+        (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
+      );
     }
   };
 
   const goToPreviousPeriod = () => {
-    const today = getNowInIsrael();
-
     if (view === "week") {
-      const currentWeekStart = startOfWeek(currentDate);
-      const previousWeekStart = addDays(currentWeekStart, -7);
-      const todayWeekStart = startOfWeek(today);
-
-      // If going back would take us before today's week, go to today's week
-      if (previousWeekStart < todayWeekStart) {
-        setCurrentDate(todayWeekStart);
-      } else {
-        setCurrentDate(previousWeekStart);
-      }
+      setCurrentDate((prev) => addDays(prev, -7));
     } else {
-      // For month view
-      const currentMonthStart = new Date(
-        currentDate.getFullYear(),
-        currentDate.getMonth(),
-        1
+      setCurrentDate(
+        (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
       );
-      const prevMonthStart = new Date(
-        currentDate.getFullYear(),
-        currentDate.getMonth() - 1,
-        1
-      );
-      const todayMonthStart = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        1
-      );
-
-      // If previous month is before current month (containing today), go to current month
-      if (prevMonthStart < todayMonthStart) {
-        setCurrentDate(todayMonthStart);
-      } else {
-        setCurrentDate(prevMonthStart);
-      }
     }
   };
 
@@ -366,39 +295,15 @@ export default function Calendar() {
     setCurrentDate(getNowInIsrael());
   };
 
-  // Check if previous navigation should be disabled
   const isPreviousDisabled = () => {
     const today = getNowInIsrael();
-
     if (view === "week") {
-      const currentWeekStart = startOfWeek(currentDate);
-      const todayWeekStart = startOfWeek(today);
-
-      // If current week start is the same as today's week start or earlier, disable
-      return (
-        (currentWeekStart.getDate() === todayWeekStart.getDate() &&
-          currentWeekStart.getMonth() === todayWeekStart.getMonth() &&
-          currentWeekStart.getFullYear() === todayWeekStart.getFullYear()) ||
-        currentWeekStart < todayWeekStart
-      );
+      return startOfWeek(currentDate) <= startOfWeek(today);
     } else {
-      // For month view - compare just the month and year
-      const currentMonthStart = new Date(
-        currentDate.getFullYear(),
-        currentDate.getMonth(),
-        1
-      );
-      const todayMonthStart = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        1
-      );
-
-      // If current month is the same as today's month or earlier, disable
       return (
-        (currentMonthStart.getMonth() === todayMonthStart.getMonth() &&
-          currentMonthStart.getFullYear() === todayMonthStart.getFullYear()) ||
-        currentMonthStart < todayMonthStart
+        currentDate.getFullYear() < today.getFullYear() ||
+        (currentDate.getFullYear() === today.getFullYear() &&
+          currentDate.getMonth() <= today.getMonth())
       );
     }
   };
@@ -428,31 +333,17 @@ export default function Calendar() {
 
     // Update URL with wouter navigation
     if (value === "all") {
-      navigate(isAdmin ? "/admin" : "/calendar");
+      navigate(viewMode === "admin" ? "/admin" : "/calendar");
     } else {
-      navigate(`${isAdmin ? "/admin" : "/calendar"}?type=${value}`);
+      navigate(
+        `${viewMode === "admin" ? "/admin" : "/calendar"}?type=${value}`
+      );
     }
   };
 
   // Handle meeting type change
   const handleMeetingTypeChange = (value: string) => {
     setMeetingType(value);
-  };
-
-  // Add handler for toggling between admin and client views
-  const handleViewModeToggle = () => {
-    const currentPath = window.location.pathname;
-
-    console.log("Toggle view mode from", currentPath);
-
-    // Check if we're in admin view
-    if (currentPath.includes("admin")) {
-      // If in admin view, go to client view
-      window.location.href = "/calendar";
-    } else {
-      // If in client view, go to admin view
-      window.location.href = "/admin";
-    }
   };
 
   return (
@@ -468,6 +359,7 @@ export default function Calendar() {
         isPreviousDisabled={isPreviousDisabled()}
         isAdmin={isAdmin}
         onViewModeToggle={handleViewModeToggle}
+        currentViewMode={viewMode}
       />
 
       <main className="flex-1 flex overflow-hidden h-full">
@@ -477,6 +369,7 @@ export default function Calendar() {
           meetingType={meetingType}
           onMeetingTypeChange={handleMeetingTypeChange}
           isAdmin={isAdmin}
+          viewMode={viewMode}
         />
 
         {isLoading ? (
@@ -513,6 +406,7 @@ export default function Calendar() {
             clientType={fullClientType || clientType}
             isAdmin={isAdmin}
             meetingType={meetingType}
+            viewMode={viewMode}
           />
         ) : (
           <MonthView
@@ -520,6 +414,7 @@ export default function Calendar() {
             timeslots={timeslots}
             onSelectDate={handleSelectDate}
             clientType={fullClientType || clientType}
+            viewMode={viewMode}
           />
         )}
       </main>

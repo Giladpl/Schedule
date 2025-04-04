@@ -52,6 +52,8 @@ interface WeekViewProps {
   onSelectDate?: (date: Date) => void; // Add optional onSelectDate prop
   clientType?: string; // Add clientType prop
   isAdmin?: boolean;
+  meetingType: string;
+  viewMode: "admin" | "client";
 }
 
 // Simple info component instead of full legend
@@ -762,7 +764,8 @@ export default function WeekView({
   clientType = "all",
   isAdmin = false,
   meetingType = "all",
-}: WeekViewProps & { meetingType?: string }) {
+  viewMode,
+}: WeekViewProps) {
   // Clear any potentially duplicated container refs
   const containerRef = React.useRef<HTMLDivElement>(null);
 

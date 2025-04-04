@@ -12,8 +12,8 @@ interface MonthViewProps {
   currentDate: Date;
   timeslots: Timeslot[];
   onSelectDate: (date: Date) => void;
-  clientType: string;
-  isAdmin?: boolean;
+  clientType?: string;
+  viewMode: "admin" | "client";
 }
 
 export default function MonthView({
@@ -21,7 +21,7 @@ export default function MonthView({
   timeslots,
   onSelectDate,
   clientType,
-  isAdmin = false,
+  viewMode,
 }: MonthViewProps) {
   const dates = useMemo(() => {
     return getDatesInMonth(currentDate.getFullYear(), currentDate.getMonth());
@@ -36,7 +36,7 @@ export default function MonthView({
 
   return (
     <div className="flex-1 overflow-auto">
-      {!isAdmin && (
+      {!viewMode && (
         <div className="p-4">
           <div className="bg-white p-2 mb-2 border border-[#dadce0] rounded-lg">
             <div className="flex items-start gap-2">
@@ -78,21 +78,26 @@ export default function MonthView({
           // Filter timeslots based on client type and admin status
           let filteredTimeslots;
 
-          if (isAdmin) {
+          if (viewMode === "admin") {
             // Admin can see all or filter by client type
             filteredTimeslots =
-              clientType === "all"
-                ? dayTimeslots
-                : dayTimeslots.filter(
-                    (slot) =>
-                      slot.clientType === clientType ||
-                      slot.clientType === "all"
-                  );
+              clientType && clientType !== "all"
+                ? dayTimeslots.filter(
+                    (ts) =>
+                      ts.clientType === "all" ||
+                      ts.clientType === clientType ||
+                      (Array.isArray(ts.clientType) &&
+                        ts.clientType.includes(clientType || "all"))
+                  )
+                : dayTimeslots;
           } else {
-            // Regular users can only see their type
+            // Regular users only see slots that match their client type
             filteredTimeslots = dayTimeslots.filter(
-              (slot) =>
-                slot.clientType === clientType || slot.clientType === "all"
+              (ts) =>
+                ts.clientType === "all" ||
+                ts.clientType === (clientType || "new_customer") ||
+                (Array.isArray(ts.clientType) &&
+                  ts.clientType.includes(clientType || "new_customer"))
             );
           }
 
@@ -139,7 +144,7 @@ export default function MonthView({
               </div>
 
               <div className="mt-1 space-y-1">
-                {isAdmin && hasVipSlots && (
+                {viewMode === "admin" && hasVipSlots && (
                   <div className="text-xs bg-[#fbbc04] text-[#202124] rounded-sm p-1">
                     VIP slots available
                   </div>
@@ -147,7 +152,9 @@ export default function MonthView({
 
                 {hasRegularSlots && (
                   <div className="text-xs bg-[#1a73e8] text-white rounded-sm p-1">
-                    {isAdmin ? "Regular slots available" : "Slots available"}
+                    {viewMode === "admin"
+                      ? "Regular slots available"
+                      : "Slots available"}
                   </div>
                 )}
               </div>
