@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { formatDateRange } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 interface CalendarHeaderProps {
   currentViewStart: Date;
@@ -29,6 +30,26 @@ export default function CalendarHeader({
 }: CalendarHeaderProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
+
+  // Update menu position when settings button is clicked
+  const updateMenuPosition = () => {
+    if (settingsRef.current) {
+      const rect = settingsRef.current.getBoundingClientRect();
+      setMenuPosition({
+        top: rect.bottom + window.scrollY,
+        right: window.innerWidth - rect.right + window.scrollX,
+      });
+    }
+  };
+
+  // Toggle settings menu
+  const toggleSettings = () => {
+    if (!settingsOpen) {
+      updateMenuPosition();
+    }
+    setSettingsOpen(!settingsOpen);
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -47,10 +68,14 @@ export default function CalendarHeader({
     };
   }, []);
 
-  // Simple toggle function
-  const toggleSettings = () => {
-    setSettingsOpen(!settingsOpen);
-  };
+  // Update position on window resize
+  useEffect(() => {
+    if (settingsOpen) {
+      const handleResize = () => updateMenuPosition();
+      window.addEventListener("resize", handleResize);
+      return () => window.removeEventListener("resize", handleResize);
+    }
+  }, [settingsOpen]);
 
   return (
     <header className="border-b border-[#dadce0] py-4 px-6 flex justify-between items-center sticky top-0 bg-white z-10">
@@ -201,7 +226,7 @@ export default function CalendarHeader({
           </Button>
 
           {/* Settings Dropdown */}
-          <div className="relative" ref={settingsRef}>
+          <div ref={settingsRef}>
             <Button
               variant="ghost"
               size="icon"
@@ -230,46 +255,60 @@ export default function CalendarHeader({
                 <circle cx="12" cy="12" r="3" />
               </svg>
             </Button>
-
-            {settingsOpen && (
-              <div
-                className="fixed top-[60px] right-6 mt-1 w-64 bg-white rounded-md shadow-lg border border-gray-200"
-                style={{ zIndex: 9999 }}
-              >
-                <ul className="py-1">
-                  {isAdmin && (
-                    <li>
-                      <button
-                        onClick={() => {
-                          if (onViewModeToggle) {
-                            onViewModeToggle();
-                            setSettingsOpen(false);
-                          }
-                        }}
-                        className="w-full text-right px-4 py-3 text-sm text-blue-600 hover:bg-blue-50 font-medium block"
-                      >
-                        {window.location.pathname === "/admin"
-                          ? "מעבר לתצוגת לקוחות"
-                          : "מעבר לתצוגת אדמין"}
-                      </button>
-                    </li>
-                  )}
-                  <li>
-                    <button className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 block">
-                      הגדרות
-                    </button>
-                  </li>
-                  <li>
-                    <button className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 block">
-                      עזרה
-                    </button>
-                  </li>
-                </ul>
-              </div>
-            )}
           </div>
         </div>
       </div>
+
+      {/* Portal for dropdown menu to ensure it appears on top of everything */}
+      {settingsOpen &&
+        createPortal(
+          <div
+            className="dropdown-menu-portal"
+            style={{
+              position: "absolute",
+              top: `${menuPosition.top}px`,
+              right: `${menuPosition.right}px`,
+              zIndex: 99999,
+              backgroundColor: "white",
+              borderRadius: "0.375rem",
+              boxShadow:
+                "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+              border: "1px solid #e5e7eb",
+              width: "16rem",
+            }}
+          >
+            <ul className="py-1">
+              {isAdmin && (
+                <li>
+                  <button
+                    onClick={() => {
+                      if (onViewModeToggle) {
+                        onViewModeToggle();
+                        setSettingsOpen(false);
+                      }
+                    }}
+                    className="w-full text-right px-4 py-3 text-sm text-blue-600 hover:bg-blue-50 font-medium block"
+                  >
+                    {window.location.pathname === "/admin"
+                      ? "מעבר לתצוגת לקוחות"
+                      : "מעבר לתצוגת אדמין"}
+                  </button>
+                </li>
+              )}
+              <li>
+                <button className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 block">
+                  הגדרות
+                </button>
+              </li>
+              <li>
+                <button className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 block">
+                  עזרה
+                </button>
+              </li>
+            </ul>
+          </div>,
+          document.body
+        )}
     </header>
   );
 }
