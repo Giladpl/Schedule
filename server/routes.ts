@@ -1,4 +1,4 @@
-import { bookingFormSchema, Timeslot } from "@shared/schema";
+import { bookingFormSchema } from "@shared/schema";
 import { Express } from "express";
 import { calendar_v3, google, sheets_v4 } from "googleapis";
 import { fromZodError } from "zod-validation-error";
@@ -87,69 +87,141 @@ export async function registerRoutes(app: Express): Promise<void> {
       const startDate = new Date(start as string);
       const endDate = new Date(end as string);
 
-      // Check for Saturday in the date range
-      const hasSaturday = checkDateRangeContainsSaturday(startDate, endDate);
-      console.log(`[Debug API] Date range includes Saturday: ${hasSaturday}`);
-
-      // Get timeslots for date range
+      // Get timeslots for the date range directly - our improved storage function handles dates correctly
       let timeslots = await storage.getTimeslotsByDateRange(startDate, endDate);
-
       console.log(
         `[Debug API] Found ${timeslots.length} timeslots in date range`
       );
 
-      // Special handling for Saturday - ensure we include Saturday events even if not marked as available
+      // For debugging: log day distribution
+      const dayDistribution = Array(7).fill(0);
+      timeslots.forEach((slot) => {
+        const day = new Date(slot.startTime).getDay();
+        dayDistribution[day]++;
+      });
+      console.log(
+        `[Debug API] Day distribution (0=Sunday, 6=Saturday): ${dayDistribution.join(
+          ", "
+        )}`
+      );
+
+      // For backwards compatibility, still log Saturday information
+      const hasSaturday = checkDateRangeContainsSaturday(startDate, endDate);
       if (hasSaturday) {
-        // Get all timeslots (including unavailable ones)
-        const allTimeslots = await storage.getTimeslots();
+        // Log all Saturdays in the range
+        let saturdayDates: Date[] = [];
+        const dayMs = 24 * 60 * 60 * 1000;
+        let currentMs = startDate.getTime();
+        const endMs = endDate.getTime();
 
-        // Filter to only include those in our date range
-        const timslotsInRange = allTimeslots.filter((slot) => {
-          const slotStartTime = new Date(slot.startTime);
-          const slotEndTime = new Date(slot.endTime);
-          return slotStartTime >= startDate && slotEndTime <= endDate;
-        });
+        while (currentMs <= endMs) {
+          const currentDate = new Date(currentMs);
+          if (currentDate.getDay() === 6) {
+            // 6 = Saturday
+            saturdayDates.push(new Date(currentMs));
+          }
+          currentMs += dayMs;
+        }
 
-        // Filter for Saturday timeslots
-        const saturdayTimeslots = timslotsInRange.filter((slot: Timeslot) => {
-          const slotDate = new Date(slot.startTime);
-          return slotDate.getDay() === 6; // 6 = Saturday
+        console.log(
+          `[Debug API] Date range includes ${saturdayDates.length} Saturdays`
+        );
+
+        // Count Saturday timeslots in the response
+        const saturdayTimeslots = timeslots.filter((slot) => {
+          const day = new Date(slot.startTime).getDay();
+          return day === 6;
         });
 
         console.log(
-          `[Debug API] Found ${saturdayTimeslots.length} Saturday timeslots in date range`
+          `[Debug API] Found ${saturdayTimeslots.length} Saturday timeslots in response`
         );
-
-        if (saturdayTimeslots.length > 0) {
-          // Force Saturday timeslots to be available
-          const availableSaturdayTimeslots = saturdayTimeslots.map(
-            (slot: Timeslot) => ({
-              ...slot,
-              isAvailable: true,
-            })
-          );
-
-          // Add the forced available Saturday timeslots to our results
-          // Filter out any existing ones first to avoid duplicates
-          const nonSaturdayTimeslots = timeslots.filter((slot) => {
-            const slotDate = new Date(slot.startTime);
-            return slotDate.getDay() !== 6;
-          });
-
-          // Combine non-Saturday with forced-available Saturday timeslots
-          timeslots = [...nonSaturdayTimeslots, ...availableSaturdayTimeslots];
-
-          console.log(
-            `[Debug API] Added ${availableSaturdayTimeslots.length} Saturday timeslots to the response`
-          );
-        }
       }
 
       // Apply client type filter if provided
       if (type && type !== "all") {
+        // צעד 1: סינון בסיסי לפי סוג לקוח
         timeslots = timeslots.filter(
           (slot) => slot.clientType === type || slot.clientType === "all"
         );
+
+        // צעד 2: בדוק את כללי הלקוח כדי לסנן סוגי פגישות לא זמינים
+        try {
+          // קבל את כל כללי הלקוח כדי למצוא את כל סוגי הפגישות המותרים
+          const allClientRules = await storage.getClientRules();
+
+          // מצא את הכללים הרלוונטיים לסוג הלקוח הזה
+          const rulesForThisClient = allClientRules.filter(
+            (rule) => rule.clientType === (type as string) && rule.isActive
+          );
+
+          if (rulesForThisClient.length > 0) {
+            console.log(
+              `[Debug API] Found ${
+                rulesForThisClient.length
+              } rules for client type ${type as string}`
+            );
+
+            // צור מערך של כל סוגי הפגישות המותרים
+            const allMeetingTypesForClient: string[] = [];
+
+            // עבור כל כלל, הוסף את סוג הפגישה לרשימה (אם הוא קיים)
+            rulesForThisClient.forEach((rule) => {
+              if (rule.allowedTypes && rule.allowedTypes.trim()) {
+                allMeetingTypesForClient.push(rule.allowedTypes.trim());
+                console.log(
+                  `[Debug API] Adding allowed type: ${rule.allowedTypes} from rule ID ${rule.id}`
+                );
+              }
+            });
+
+            console.log(
+              `[Debug API] All allowed meeting types for ${
+                type as string
+              }: ${allMeetingTypesForClient.join(", ")}`
+            );
+
+            // סנן את הפגישות לפי סוגי הפגישות המותרים
+            timeslots = timeslots.filter((slot) => {
+              const slotMeetingTypes = slot.meetingTypes
+                .split(",")
+                .map((t) => t.trim());
+
+              // בדוק אם יש לפחות סוג פגישה אחד משותף
+              const hasAllowedType = slotMeetingTypes.some((slotType) =>
+                allMeetingTypesForClient.includes(slotType)
+              );
+
+              // לוג מפורט לדיבוג
+              if (slot.startTime.toString().includes("2025-04-05")) {
+                console.log(
+                  `[Debug API] Saturday slot ${new Date(
+                    slot.startTime
+                  ).toISOString()}: ` +
+                    `types=${slotMeetingTypes.join(
+                      ","
+                    )} allowed=${hasAllowedType}`
+                );
+              }
+
+              return hasAllowedType;
+            });
+
+            console.log(
+              `[Debug API] After filtering by actual allowed types: ${timeslots.length} timeslots`
+            );
+          } else {
+            console.log(
+              `[Debug API] No rules found for client type ${type as string}`
+            );
+          }
+        } catch (error) {
+          console.error(
+            `[Debug API] Error applying client rule filtering:`,
+            error
+          );
+          // במקרה של שגיאה, נמשיך עם הסינון הבסיסי
+        }
       }
 
       // Apply meeting type filter if provided
@@ -293,9 +365,34 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Add a refresh route to reload client rules from Google Sheets
-  app.get("/api/refresh-client-rules", async (req, res) => {
+  app.post("/api/refresh-client-rules", async (req, res) => {
     try {
       console.log("Manually refreshing client rules from Google Sheets");
+      const sheets = setupGoogleClients().sheets;
+      await loadClientRulesFromSheets(sheets);
+
+      // Get the updated rules to return them
+      const rules = await storage.getClientRules();
+
+      res.json({
+        success: true,
+        message: "Client rules refreshed successfully",
+        rules,
+      });
+    } catch (error) {
+      console.error("Error refreshing client rules:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to refresh client rules",
+        message: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  // Also keep the GET endpoint for backward compatibility
+  app.get("/api/refresh-client-rules", async (req, res) => {
+    try {
+      console.log("Manually refreshing client rules from Google Sheets (GET)");
       const sheets = setupGoogleClients().sheets;
       await loadClientRulesFromSheets(sheets);
 
@@ -1220,21 +1317,31 @@ async function syncWithGoogleCalendar(
         }
 
         const eventDate = new Date(event.start.dateTime);
-        const isSaturday = eventDate.getDay() === 6;
+        const dayOfWeek = eventDate.getDay();
+        const isSaturday = dayOfWeek === 6;
 
         // Get client type and allowed meeting types from event description or summary
         const clientType = extractClientType(event);
         const meetingTypes = extractMeetingTypes(event);
 
         console.log(
-          `[Debug] Processing event: ${event.summary}, Client: ${clientType}, Meeting types: ${meetingTypes}, IsSaturday: ${isSaturday}`
+          `[Debug] Processing event: ${
+            event.summary
+          }, Client: ${clientType}, Meeting types: ${meetingTypes}, Day: ${
+            dayOfWeek === 0
+              ? "Sunday"
+              : dayOfWeek === 6
+              ? "Saturday"
+              : dayOfWeek
+          }`
         );
 
-        // For Saturday events, always set isAvailable to true
-        const isAvailable = isSaturday ? true : true; // Default all events to available, but explicitly handle Saturday
+        // All events are available by default
+        const isAvailable = true;
 
+        // Save the log for Saturday events for debugging (backwards compatibility)
         if (isSaturday) {
-          console.log(`[Debug] Saturday event - forcing isAvailable=true`);
+          console.log(`[Debug] Saturday event - marked as available`);
         }
 
         // Create a timeslot from the event
@@ -1499,17 +1606,13 @@ function extractClientType(event: calendar_v3.Schema$Event): string {
 function extractMeetingTypes(event: calendar_v3.Schema$Event): string {
   const meetingTypes: string[] = [];
 
-  // Special handling for Saturday events - always mark them as available for all meeting types
+  // Check if it's a Saturday event for logging only
   if (event.start?.dateTime) {
     const eventDate = new Date(event.start.dateTime);
     const isSaturday = eventDate.getDay() === 6;
 
     if (isSaturday) {
       console.log(`[Debug] Saturday event detected: ${event.summary}`);
-      console.log(
-        `[Debug] Automatically marking Saturday event as available for all meeting types`
-      );
-      return "טלפון,זום,פגישה"; // All meeting types for Saturday
     }
   }
 
