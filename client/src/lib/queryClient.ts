@@ -12,7 +12,8 @@ async function throwIfResNotOk(res: Response) {
 export async function apiRequest<T>(
   method: string,
   url: string,
-  data?: unknown | undefined
+  data?: unknown | undefined,
+  options?: { signal?: AbortSignal }
 ): Promise<T> {
   const fullUrl = url.startsWith("http") ? url : `${API_BASE_URL}${url}`;
   const res = await fetch(fullUrl, {
@@ -20,6 +21,7 @@ export async function apiRequest<T>(
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
+    signal: options?.signal,
   });
 
   await throwIfResNotOk(res);

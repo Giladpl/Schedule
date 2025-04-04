@@ -132,6 +132,7 @@ export default function Calendar() {
     data: timeslots = [],
     isLoading,
     refetch,
+    error,
   } = useQuery({
     queryKey: [
       "timeslots",
@@ -156,10 +157,73 @@ export default function Calendar() {
           checkSync();
         });
       }
-      return fetchTimeslots(startDate, endDate, clientType, meetingType);
+
+      try {
+        console.log("[Debug] Executing fetchTimeslots in queryFn");
+        const result = await fetchTimeslots(
+          startDate,
+          endDate,
+          clientType,
+          meetingType
+        );
+        console.log(
+          "[Debug] fetchTimeslots completed with",
+          result.length,
+          "results"
+        );
+        return result;
+      } catch (e) {
+        console.error("[Debug] Error in timeslots queryFn:", e);
+        return []; // Return empty array on error to prevent perpetual loading
+      }
     },
     refetchOnWindowFocus: false,
+    staleTime: 30000, // Cache for 30 seconds
+    retry: 1, // Only retry once on failure
   });
+
+  // Add error handling for the error from useQuery
+  useEffect(() => {
+    if (error) {
+      console.error("[Debug] Error from React Query:", error);
+
+      // Display error toast to user
+      toast({
+        title: "Error Loading Calendar",
+        description:
+          "Failed to load timeslots. Please try refreshing the page.",
+        variant: "destructive",
+      });
+    }
+  }, [error, toast]);
+
+  // Force loading to false after 10 seconds as a fallback
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    if (isLoading) {
+      console.log("[Debug] Setting loading timeout failsafe");
+      timeoutId = setTimeout(() => {
+        console.log("[Debug] Loading timed out - forcing content display");
+        queryClient.setQueryData(
+          [
+            "timeslots",
+            {
+              startDate: startDate.toISOString(),
+              endDate: endDate.toISOString(),
+              clientType,
+              meetingType,
+            },
+          ],
+          []
+        );
+      }, 10000);
+    }
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isLoading, startDate, endDate, clientType, meetingType]);
 
   // Create booking mutation
   const { mutate, isPending } = useMutation({

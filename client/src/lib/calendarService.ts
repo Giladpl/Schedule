@@ -48,7 +48,24 @@ export async function fetchTimeslots(
   );
 
   try {
-    const response = await apiRequest<Timeslot[]>("GET", url.toString());
+    // Create an AbortController to timeout the request if it takes too long
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      console.log("[Debug] Fetch request timeout after 15 seconds");
+      controller.abort();
+    }, 15000);
+
+    const response = await apiRequest<Timeslot[]>(
+      "GET",
+      url.toString(),
+      undefined,
+      {
+        signal: controller.signal,
+      }
+    );
+
+    clearTimeout(timeoutId);
+
     console.log(`[Debug] Received ${response.length} timeslots`);
 
     if (response.length === 0) {
@@ -68,6 +85,10 @@ export async function fetchTimeslots(
 
     return response;
   } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      console.error("[Debug] Fetch timeslots request timed out");
+      return []; // Return empty array on timeout
+    }
     console.error("[Debug] Error fetching timeslots:", error);
     throw error;
   }
