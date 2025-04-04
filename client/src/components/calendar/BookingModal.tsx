@@ -79,6 +79,11 @@ export function BookingModal({
   );
   const [timeSegments, setTimeSegments] = useState<Date[]>([]);
 
+  // Read client type from URL to handle "all" timeslots better
+  const searchParams = new URLSearchParams(window.location.search);
+  const queryType = searchParams.get("type");
+  const activeClientType = queryType ? queryType.split(",")[0] : "all";
+
   // Fetch meeting types from the API
   const { data: clientData } = useQuery({
     queryKey: ["/api/client-data"],
@@ -132,42 +137,42 @@ export function BookingModal({
     // Get the duration based on both client type and meeting type
     let segmentDuration = 30; // Default fallback duration
 
-    if (clientData?.clients && timeslot.clientType) {
-      // Find the client using the timeslot's clientType
-      const clientTypeId = !isNaN(Number(timeslot.clientType))
-        ? Number(timeslot.clientType)
+    if (clientData?.clients) {
+      // Determine which client type to use
+      const effectiveClientType =
+        timeslot.clientType === "all" ? activeClientType : timeslot.clientType;
+
+      // Find the client based on effective client type
+      const clientTypeId = !isNaN(Number(effectiveClientType))
+        ? Number(effectiveClientType)
         : undefined;
 
-      // Try to find by ID first, then by type name
       const client = clientData.clients.find(
         (c) =>
           (clientTypeId !== undefined && c.id === clientTypeId) ||
-          c.type === timeslot.clientType
+          c.type === effectiveClientType
       );
 
-      // If client found and has the meeting type, use its duration
+      // If client has this meeting type, use its duration
       if (client && client.meetings && client.meetings[selectedMeetingType]) {
         segmentDuration = client.meetings[selectedMeetingType];
         console.log(
-          `[Debug] Using client-specific duration: ${segmentDuration} minutes for ${client.type} - ${selectedMeetingType}`
+          `[Debug] Using duration for booking: ${segmentDuration} minutes for ${client.type}`
         );
       } else {
-        // Fallback to the global meeting types if client-specific not found
+        // Fallback to global meeting types
         const meetingTypeInfo = meetingTypes.find(
-          (m) => m.name === selectedMeetingType
+          (type) => type.name === selectedMeetingType
         );
 
         if (meetingTypeInfo) {
           segmentDuration = meetingTypeInfo.duration;
-          console.log(
-            `[Debug] Using global duration: ${segmentDuration} minutes for ${selectedMeetingType}`
-          );
         }
       }
     } else {
-      // Fallback to global meeting types if client data not available
+      // Fallback to global meeting types
       const meetingTypeInfo = meetingTypes.find(
-        (m) => m.name === selectedMeetingType
+        (type) => type.name === selectedMeetingType
       );
 
       if (meetingTypeInfo) {
@@ -192,7 +197,13 @@ export function BookingModal({
       setSelectedTimeSegment(segments[0]);
       form.setValue("startTime", segments[0]);
     }
-  }, [selectedMeetingType, timeslot, meetingTypes, clientData]);
+  }, [
+    selectedMeetingType,
+    timeslot,
+    meetingTypes,
+    clientData,
+    activeClientType,
+  ]);
 
   const handleSubmit = async (values: FormData) => {
     if (!timeslot || !selectedMeetingType) return;
@@ -203,21 +214,28 @@ export function BookingModal({
     // Get the duration using client type and meeting type
     let duration = 30; // Default fallback
 
-    if (clientData?.clients && timeslot.clientType) {
-      // Find the client based on timeslot's clientType
-      const clientTypeId = !isNaN(Number(timeslot.clientType))
-        ? Number(timeslot.clientType)
+    if (clientData?.clients) {
+      // Determine which client type to use
+      const effectiveClientType =
+        timeslot.clientType === "all" ? activeClientType : timeslot.clientType;
+
+      // Find the client based on effective client type
+      const clientTypeId = !isNaN(Number(effectiveClientType))
+        ? Number(effectiveClientType)
         : undefined;
 
       const client = clientData.clients.find(
         (c) =>
           (clientTypeId !== undefined && c.id === clientTypeId) ||
-          c.type === timeslot.clientType
+          c.type === effectiveClientType
       );
 
       // If client has this meeting type, use its duration
       if (client && client.meetings && client.meetings[selectedMeetingType]) {
         duration = client.meetings[selectedMeetingType];
+        console.log(
+          `[Debug] Using duration for booking: ${duration} minutes for ${client.type}`
+        );
       } else {
         // Fallback to global meeting types
         const meetingTypeInfo = meetingTypes.find(
@@ -337,10 +355,16 @@ export function BookingModal({
                     // Get duration based on client type and meeting type
                     let duration = 30; // Default fallback
 
-                    if (clientData?.clients && timeslot.clientType) {
-                      // Find the client using the timeslot's clientType
-                      const clientTypeId = !isNaN(Number(timeslot.clientType))
-                        ? Number(timeslot.clientType)
+                    if (clientData?.clients) {
+                      // Determine which client type to use
+                      const effectiveClientType =
+                        timeslot.clientType === "all"
+                          ? activeClientType
+                          : timeslot.clientType;
+
+                      // Find the client based on effective client type
+                      const clientTypeId = !isNaN(Number(effectiveClientType))
+                        ? Number(effectiveClientType)
                         : undefined;
 
                       // Try to find by ID first, then by type name
@@ -348,12 +372,15 @@ export function BookingModal({
                         (c) =>
                           (clientTypeId !== undefined &&
                             c.id === clientTypeId) ||
-                          c.type === timeslot.clientType
+                          c.type === effectiveClientType
                       );
 
                       // If client found and has the meeting type, use its duration
                       if (client && client.meetings && client.meetings[type]) {
                         duration = client.meetings[type];
+                        console.log(
+                          `[Debug] UI showing duration: ${duration} for ${client.type} - ${type}`
+                        );
                       } else {
                         // Fallback to global meeting types
                         const typeInfo = meetingTypes.find(
