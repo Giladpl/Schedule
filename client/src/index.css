@@ -27,29 +27,6 @@
   flex-direction: column;
 }
 
-/* Fix for the today highlight */
-.border-b {
-  position: relative;
-  z-index: 15;
-}
-
-/* Make sure the header row stays on top */
-.calendar-column {
-  position: relative;
-  overflow: hidden;
-}
-
-/* Z-index hierarchy for proper layering */
-.w-16.absolute.left-0.top-0 {
-  z-index: 20;
-}
-
-.calendar-column .font-google-sans {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
 /* Hide scrollbars but maintain scroll functionality */
 .hide-scrollbar {
   -ms-overflow-style: none; /* IE and Edge */
@@ -60,30 +37,10 @@
   display: none; /* Chrome, Safari and Opera */
 }
 
-/* Sticky positioning for time markers */
-.sticky {
-  position: sticky;
-  left: 0;
-  background-color: white;
-  z-index: 25;
-}
-
-/* Expandable timeslots styling */
-.expanded-timeslot {
-  max-height: 80vh;
-  overflow-y: auto;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-}
-
 /* More readable timeslots for small screens */
 @media (max-width: 1024px) {
   .calendar-container {
     --min-column-width: 120px;
-  }
-
-  /* Make week columns take at least the minimum width */
-  .calendar-column {
-    min-width: var(--min-column-width);
   }
 }
 

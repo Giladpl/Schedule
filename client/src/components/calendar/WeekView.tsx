@@ -206,11 +206,12 @@ function ExpandableTimeslots({
         left: "2px",
         right: "2px",
         height: expanded ? "auto" : `${height}px`,
-        zIndex: expanded ? 20 : 10,
+        zIndex: expanded ? 50 : 10, // Higher z-index when expanded
+        maxHeight: expanded ? "80vh" : "auto",
+        overflow: expanded ? "auto" : "visible",
+        boxShadow: expanded ? "0 4px 20px rgba(0, 0, 0, 0.1)" : "none",
       }}
-      className={`${
-        expanded ? "bg-white shadow-lg border rounded-lg expanded-timeslot" : ""
-      }`}
+      className={`${expanded ? "bg-white shadow-lg border rounded-lg" : ""}`}
     >
       {!expanded ? (
         <div
@@ -391,90 +392,106 @@ function DaySchedule({
     return (
       <div className="flex-1 flex flex-col h-full">
         <div className="px-2 flex-1 flex flex-col">
-          <h2 className="text-lg font-bold mb-2">
+          <h2 className="text-lg font-bold mb-2 text-center">
             {`${getDayName(day)} ${getDayOfMonth(day)}`}
           </h2>
 
-          <div className="relative flex-1 overflow-auto hide-scrollbar">
-            {/* Time markers */}
-            <div className="absolute left-0 top-0 bottom-0 w-16 z-30">
-              {hours.map((hour, index) => (
+          <div className="relative flex-1 overflow-hidden">
+            <div className="absolute inset-0 overflow-auto hide-scrollbar">
+              <div
+                style={{
+                  minHeight: "100%",
+                  height: `${hourHeight * TOTAL_HOURS + 20}px`,
+                  position: "relative",
+                }}
+              >
+                {/* Time markers */}
                 <div
-                  key={index}
-                  className="flex items-center"
-                  style={{ height: `${hourHeight}px` }}
+                  className="absolute left-0 top-0 w-16 border-r border-gray-200 bg-white"
+                  style={{ zIndex: 30 }}
                 >
-                  <div className="w-16 text-xs text-gray-500 z-30 bg-white bg-opacity-90 px-2 py-1 sticky left-0 font-medium">
-                    {`${hour}:00`}
-                  </div>
+                  {hours.map((hour, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center bg-white"
+                      style={{ height: `${hourHeight}px` }}
+                    >
+                      <div className="w-16 text-xs text-gray-500 px-2 py-1 font-medium text-right">
+                        {`${hour}:00`}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+
+                {/* Grid lines */}
+                <div className="absolute left-16 right-0 top-0">
+                  {hours.map((hour, index) => (
+                    <div
+                      key={index}
+                      className="border-t border-gray-200"
+                      style={{ height: `${hourHeight}px` }}
+                    ></div>
+                  ))}
+                </div>
+
+                {/* Render timeslots for the day */}
+                {Object.entries(groupedByTime).map(
+                  ([timeKey, slots], groupIdx) => {
+                    const firstSlot = slots[0];
+                    const startTime = new Date(firstSlot.startTime);
+                    const endTime = new Date(firstSlot.endTime);
+                    const startHourFraction =
+                      startTime.getHours() + startTime.getMinutes() / 60;
+                    const endHourFraction =
+                      endTime.getHours() + endTime.getMinutes() / 60;
+                    const top = (startHourFraction - START_HOUR) * hourHeight;
+                    const height =
+                      (endHourFraction - startHourFraction) * hourHeight;
+
+                    // Only show if within visible range
+                    if (
+                      startHourFraction >= END_HOUR + 1 ||
+                      endHourFraction <= START_HOUR
+                    )
+                      return null;
+
+                    if (slots.length > 1) {
+                      return (
+                        <ExpandableTimeslots
+                          key={timeKey}
+                          slots={slots}
+                          timeKey={timeKey}
+                          top={top}
+                          height={height}
+                          onSelectTimeslot={onSelectTimeslot}
+                          activeClientType={clientType}
+                        />
+                      );
+                    } else {
+                      return (
+                        <div
+                          key={timeKey}
+                          style={{
+                            position: "absolute",
+                            top: `${top}px`,
+                            left: "18px",
+                            right: "2px",
+                            height: `${height}px`,
+                            zIndex: 10,
+                          }}
+                        >
+                          <TimeSlot
+                            timeslot={firstSlot}
+                            onClick={() => onSelectTimeslot(firstSlot)}
+                            activeClientType={clientType}
+                          />
+                        </div>
+                      );
+                    }
+                  }
+                )}
+              </div>
             </div>
-
-            {/* Grid lines */}
-            <div className="absolute left-16 right-0 top-0">
-              {hours.map((hour, index) => (
-                <div
-                  key={index}
-                  className="border-t border-gray-200"
-                  style={{ height: `${hourHeight}px` }}
-                ></div>
-              ))}
-            </div>
-
-            {/* Render timeslots for the day */}
-            {Object.entries(groupedByTime).map(([timeKey, slots], groupIdx) => {
-              const firstSlot = slots[0];
-              const startTime = new Date(firstSlot.startTime);
-              const endTime = new Date(firstSlot.endTime);
-              const startHourFraction =
-                startTime.getHours() + startTime.getMinutes() / 60;
-              const endHourFraction =
-                endTime.getHours() + endTime.getMinutes() / 60;
-              const top = (startHourFraction - START_HOUR) * hourHeight;
-              const height = (endHourFraction - startHourFraction) * hourHeight;
-
-              // Only show if within visible range
-              if (
-                startHourFraction >= END_HOUR + 1 ||
-                endHourFraction <= START_HOUR
-              )
-                return null;
-
-              if (slots.length > 1) {
-                return (
-                  <ExpandableTimeslots
-                    key={timeKey}
-                    slots={slots}
-                    timeKey={timeKey}
-                    top={top}
-                    height={height}
-                    onSelectTimeslot={onSelectTimeslot}
-                    activeClientType={clientType}
-                  />
-                );
-              } else {
-                return (
-                  <div
-                    key={timeKey}
-                    style={{
-                      position: "absolute",
-                      top: `${top}px`,
-                      left: "18px",
-                      right: "2px",
-                      height: `${height}px`,
-                      zIndex: 10,
-                    }}
-                  >
-                    <TimeSlot
-                      timeslot={firstSlot}
-                      onClick={() => onSelectTimeslot(firstSlot)}
-                      activeClientType={clientType}
-                    />
-                  </div>
-                );
-              }
-            })}
           </div>
         </div>
       </div>
@@ -484,10 +501,13 @@ function DaySchedule({
   // DESKTOP VIEW
   return (
     <div className="flex-1 flex flex-col h-full">
-      {/* Day header */}
-      <div className="border-b border-[#dadce0] flex-shrink-0 relative z-20">
+      {/* Day header - completely redesigned */}
+      <div
+        className="flex-shrink-0 border-b border-[#dadce0] bg-white"
+        style={{ zIndex: 40, position: "relative" }}
+      >
         <div
-          className={`text-center py-3 calendar-column overflow-hidden ${
+          className={`text-center py-3 relative ${
             isSameDay(day, today) ? "bg-[#e8f0fe]" : ""
           }`}
         >
@@ -498,20 +518,16 @@ function DaySchedule({
           >
             {getDayName(day)}
           </div>
-          <div
-            className={`font-google-sans text-xl mt-1 flex items-center justify-center ${
-              isSameDay(day, today) ? "text-[#1a73e8]" : ""
-            }`}
-          >
-            <span
+          <div className="flex justify-center items-center mt-1">
+            <div
               className={`${
                 isSameDay(day, today)
-                  ? "bg-[#1a73e8] bg-opacity-10 rounded-full w-10 h-10 flex items-center justify-center"
+                  ? "text-[#1a73e8] bg-[#1a73e8] bg-opacity-10 rounded-full"
                   : ""
-              }`}
+              } w-10 h-10 flex items-center justify-center font-google-sans text-xl`}
             >
               {getDayOfMonth(day)}
-            </span>
+            </div>
           </div>
         </div>
       </div>
@@ -528,16 +544,21 @@ function DaySchedule({
               minWidth: "100%",
               /* Full content height based on hour count and height */
               height: `${hourHeight * TOTAL_HOURS + 20}px`,
+              position: "relative",
             }}
           >
             {/* Hour markers */}
-            <div className="w-16 absolute left-0 top-0 border-r border-[#dadce0] bg-white z-30 sticky">
+            <div
+              className="w-16 absolute left-0 top-0 border-r border-[#dadce0] bg-white"
+              style={{ zIndex: 30 }}
+            >
               {hours.map((hour, index) => (
                 <div
                   key={index}
-                  className="text-right pr-2 text-xs text-[#5f6368] font-medium"
+                  className="text-right pr-2 text-xs text-[#5f6368] font-medium bg-white"
                   style={{
                     height: `${hourHeight}px`,
+                    position: "relative",
                     paddingTop: "4px",
                   }}
                 >
@@ -547,7 +568,7 @@ function DaySchedule({
             </div>
 
             {/* Grid and timeslots */}
-            <div className="ml-16 absolute right-0 top-0 border-r border-[#dadce0] calendar-column">
+            <div className="ml-16 absolute right-0 top-0 border-r border-[#dadce0]">
               {/* Horizontal grid lines */}
               {hours.map((hour, index) => (
                 <div
@@ -739,9 +760,16 @@ export function WeekView({
   return (
     <div className="h-full w-full flex flex-col">
       <CalendarInfo />
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex min-w-0 overflow-hidden">
         {weekDays.map((day, index) => (
-          <div key={index} className="flex-1 min-w-0 min-h-0 overflow-hidden">
+          <div
+            key={index}
+            className="flex-1 min-w-[120px] flex flex-col overflow-hidden"
+            style={{
+              borderRight:
+                index < weekDays.length - 1 ? "1px solid #dadce0" : "none",
+            }}
+          >
             <DaySchedule
               day={day}
               timeslots={timeslots}
