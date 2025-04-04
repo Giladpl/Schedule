@@ -27,7 +27,7 @@
   flex-direction: column;
 }
 
-/* Hide scrollbars but maintain scroll functionality */
+/* Hide scrollbars but maintain scroll functionality if needed for modals */
 .hide-scrollbar {
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
@@ -35,6 +35,11 @@
 
 .hide-scrollbar::-webkit-scrollbar {
   display: none; /* Chrome, Safari and Opera */
+}
+
+/* Style for meeting slots to ensure visibility */
+.rounded-lg {
+  overflow: visible !important;
 }
 
 /* More readable timeslots for small screens */

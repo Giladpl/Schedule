@@ -469,9 +469,9 @@ export default function Calendar() {
             <p className="text-[#5f6368]">Loading calendar...</p>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col h-full overflow-hidden">
+          <div className="flex-1 flex flex-col h-full">
             {view === "week" ? (
-              <div className="calendar-container w-full h-full overflow-hidden">
+              <div className="calendar-container w-full h-full">
                 <WeekView
                   weekDays={weekDays}
                   timeslots={timeslots}
@@ -482,7 +482,7 @@ export default function Calendar() {
                 />
               </div>
             ) : (
-              <div className="calendar-container w-full h-full overflow-hidden">
+              <div className="calendar-container w-full h-full">
                 <MonthView
                   currentDate={currentDate}
                   timeslots={timeslots}

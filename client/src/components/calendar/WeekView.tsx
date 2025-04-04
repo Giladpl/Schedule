@@ -134,13 +134,15 @@ function ExpandableTimeslots({
   height,
   onSelectTimeslot,
   activeClientType,
+  usePercentage,
 }: {
   slots: Timeslot[];
   timeKey: string;
-  top: number;
-  height: number;
+  top: string;
+  height: string;
   onSelectTimeslot: (timeslot: Timeslot) => void;
   activeClientType?: string;
+  usePercentage: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -202,10 +204,10 @@ function ExpandableTimeslots({
       key={timeKey}
       style={{
         position: "absolute",
-        top: `${top}px`,
+        top: usePercentage ? top : `${top}px`,
         left: "2px",
         right: "2px",
-        height: expanded ? "auto" : `${height}px`,
+        height: usePercentage ? height : `${height}px`,
         zIndex: expanded ? 50 : 10, // Higher z-index when expanded
         maxHeight: expanded ? "80vh" : "auto",
         overflow: expanded ? "auto" : "visible",
@@ -396,25 +398,21 @@ function DaySchedule({
             {`${getDayName(day)} ${getDayOfMonth(day)}`}
           </h2>
 
-          <div className="relative flex-1 overflow-hidden">
-            <div className="absolute inset-0 overflow-auto hide-scrollbar">
-              <div
-                style={{
-                  minHeight: "100%",
-                  height: `${hourHeight * TOTAL_HOURS + 20}px`,
-                  position: "relative",
-                }}
-              >
+          <div className="relative flex-1">
+            {/* Fixed content container without scrolling */}
+            <div className="absolute inset-0">
+              {/* Content container */}
+              <div style={{ height: "100%", position: "relative" }}>
                 {/* Time markers */}
                 <div
-                  className="absolute left-0 top-0 w-16 border-r border-gray-200 bg-white"
+                  className="absolute left-0 top-0 bottom-0 w-16 border-r border-gray-200 bg-white"
                   style={{ zIndex: 30 }}
                 >
                   {hours.map((hour, index) => (
                     <div
                       key={index}
                       className="flex items-center bg-white"
-                      style={{ height: `${hourHeight}px` }}
+                      style={{ height: `${100 / TOTAL_HOURS}%` }}
                     >
                       <div className="w-16 text-xs text-gray-500 px-2 py-1 font-medium text-right">
                         {`${hour}:00`}
@@ -424,12 +422,12 @@ function DaySchedule({
                 </div>
 
                 {/* Grid lines */}
-                <div className="absolute left-16 right-0 top-0">
+                <div className="absolute left-16 right-0 top-0 bottom-0">
                   {hours.map((hour, index) => (
                     <div
                       key={index}
                       className="border-t border-gray-200"
-                      style={{ height: `${hourHeight}px` }}
+                      style={{ height: `${100 / TOTAL_HOURS}%` }}
                     ></div>
                   ))}
                 </div>
@@ -444,9 +442,13 @@ function DaySchedule({
                       startTime.getHours() + startTime.getMinutes() / 60;
                     const endHourFraction =
                       endTime.getHours() + endTime.getMinutes() / 60;
-                    const top = (startHourFraction - START_HOUR) * hourHeight;
-                    const height =
-                      (endHourFraction - startHourFraction) * hourHeight;
+
+                    // Calculate position as percentage of total visible hours
+                    const startPercent =
+                      ((startHourFraction - START_HOUR) / TOTAL_HOURS) * 100;
+                    const heightPercent =
+                      ((endHourFraction - startHourFraction) / TOTAL_HOURS) *
+                      100;
 
                     // Only show if within visible range
                     if (
@@ -461,10 +463,11 @@ function DaySchedule({
                           key={timeKey}
                           slots={slots}
                           timeKey={timeKey}
-                          top={top}
-                          height={height}
+                          top={`${startPercent}%`}
+                          height={`${heightPercent}%`}
                           onSelectTimeslot={onSelectTimeslot}
                           activeClientType={clientType}
+                          usePercentage={true}
                         />
                       );
                     } else {
@@ -473,11 +476,11 @@ function DaySchedule({
                           key={timeKey}
                           style={{
                             position: "absolute",
-                            top: `${top}px`,
+                            top: `${startPercent}%`,
                             left: "18px",
                             right: "2px",
-                            height: `${height}px`,
-                            zIndex: 10,
+                            height: `${heightPercent}%`,
+                            zIndex: 20,
                           }}
                         >
                           <TimeSlot
@@ -501,7 +504,7 @@ function DaySchedule({
   // DESKTOP VIEW
   return (
     <div className="flex-1 flex flex-col h-full">
-      {/* Day header - completely redesigned */}
+      {/* Day header */}
       <div
         className="flex-shrink-0 border-b border-[#dadce0] bg-white"
         style={{ zIndex: 40, position: "relative" }}
@@ -532,24 +535,15 @@ function DaySchedule({
         </div>
       </div>
 
-      {/* Time grid */}
-      <div className="flex-1 relative overflow-hidden">
-        {/* Create a fixed container with scrolling */}
-        <div className="absolute inset-0 overflow-auto hide-scrollbar">
-          {/* Content container with proper height to ensure scrolling */}
-          <div
-            style={{
-              minHeight: "100%",
-              /* Set a minimum width to ensure all columns are visible */
-              minWidth: "100%",
-              /* Full content height based on hour count and height */
-              height: `${hourHeight * TOTAL_HOURS + 20}px`,
-              position: "relative",
-            }}
-          >
+      {/* Time grid - redesigned to remove scrolling and make everything visible */}
+      <div className="flex-1 relative">
+        {/* Fixed content without scrolling */}
+        <div className="absolute inset-0">
+          {/* Content container with all hours visible */}
+          <div style={{ height: "100%", position: "relative" }}>
             {/* Hour markers */}
             <div
-              className="w-16 absolute left-0 top-0 border-r border-[#dadce0] bg-white"
+              className="w-16 absolute left-0 top-0 bottom-0 border-r border-[#dadce0] bg-white"
               style={{ zIndex: 30 }}
             >
               {hours.map((hour, index) => (
@@ -557,7 +551,7 @@ function DaySchedule({
                   key={index}
                   className="text-right pr-2 text-xs text-[#5f6368] font-medium bg-white"
                   style={{
-                    height: `${hourHeight}px`,
+                    height: `${100 / TOTAL_HOURS}%`,
                     position: "relative",
                     paddingTop: "4px",
                   }}
@@ -568,13 +562,13 @@ function DaySchedule({
             </div>
 
             {/* Grid and timeslots */}
-            <div className="ml-16 absolute right-0 top-0 border-r border-[#dadce0]">
+            <div className="ml-16 absolute left-0 right-0 top-0 bottom-0 border-r border-[#dadce0]">
               {/* Horizontal grid lines */}
               {hours.map((hour, index) => (
                 <div
                   key={index}
                   className="border-t border-[#dadce0]"
-                  style={{ height: `${hourHeight}px` }}
+                  style={{ height: `${100 / TOTAL_HOURS}%` }}
                 ></div>
               ))}
 
@@ -588,9 +582,12 @@ function DaySchedule({
                     startTime.getHours() + startTime.getMinutes() / 60;
                   const endHourFraction =
                     endTime.getHours() + endTime.getMinutes() / 60;
-                  const top = (startHourFraction - START_HOUR) * hourHeight;
-                  const height =
-                    (endHourFraction - startHourFraction) * hourHeight;
+
+                  // Calculate position as percentage of total visible hours
+                  const startPercent =
+                    ((startHourFraction - START_HOUR) / TOTAL_HOURS) * 100;
+                  const heightPercent =
+                    ((endHourFraction - startHourFraction) / TOTAL_HOURS) * 100;
 
                   // Only show if within visible range
                   if (
@@ -606,10 +603,11 @@ function DaySchedule({
                         key={timeKey}
                         slots={slots}
                         timeKey={timeKey}
-                        top={top}
-                        height={height}
+                        top={`${startPercent}%`}
+                        height={`${heightPercent}%`}
                         onSelectTimeslot={onSelectTimeslot}
                         activeClientType={clientType}
+                        usePercentage={true}
                       />
                     );
                   }
@@ -621,11 +619,11 @@ function DaySchedule({
                         key={timeKey}
                         style={{
                           position: "absolute",
-                          top: `${top}px`,
+                          top: `${startPercent}%`,
                           left: "2px",
                           right: "2px",
-                          height: `${height}px`,
-                          zIndex: 10,
+                          height: `${heightPercent}%`,
+                          zIndex: 20,
                           display: "flex",
                           gap: "4px",
                         }}
@@ -659,11 +657,11 @@ function DaySchedule({
                       key={timeKey}
                       style={{
                         position: "absolute",
-                        top: `${top}px`,
+                        top: `${startPercent}%`,
                         left: "2px",
                         right: "2px",
-                        height: `${height}px`,
-                        zIndex: 10,
+                        height: `${heightPercent}%`,
+                        zIndex: 20,
                       }}
                     >
                       <TimeSlot
@@ -756,19 +754,16 @@ export function WeekView({
     );
   }
 
-  // Desktop view
+  // Desktop view - fixed height, no scrolling
   return (
     <div className="h-full w-full flex flex-col">
       <CalendarInfo />
-      <div className="flex-1 flex min-w-0 overflow-hidden">
+      <div className="flex-1 flex overflow-hidden">
         {weekDays.map((day, index) => (
           <div
             key={index}
-            className="flex-1 min-w-[120px] flex flex-col overflow-hidden"
-            style={{
-              borderRight:
-                index < weekDays.length - 1 ? "1px solid #dadce0" : "none",
-            }}
+            className="flex-1 flex flex-col border-r border-[#dadce0] last:border-r-0"
+            style={{ minWidth: "120px" }}
           >
             <DaySchedule
               day={day}
