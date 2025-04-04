@@ -627,6 +627,50 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Function to check if any events exist in the specified date range
+  async function checkForEvents(
+    calendar: calendar_v3.Calendar,
+    days: number = 60
+  ): Promise<boolean> {
+    try {
+      const now = new Date();
+      const endDate = new Date(now);
+      endDate.setDate(now.getDate() + days);
+
+      console.log(
+        `[Debug] Checking for events from ${now.toISOString()} to ${endDate.toISOString()}`
+      );
+
+      const response = await calendar.events.list({
+        calendarId: process.env.GOOGLE_CALENDAR_ID!,
+        timeMin: now.toISOString(),
+        timeMax: endDate.toISOString(),
+        maxResults: 5, // Just need to know if any exist
+        singleEvents: true,
+      });
+
+      const hasEvents = response.data.items && response.data.items.length > 0;
+      console.log(
+        `[Debug] Found ${
+          response.data.items?.length || 0
+        } events in the next ${days} days`
+      );
+
+      if (!hasEvents) {
+        console.log(
+          "[Debug] No events found in calendar for the specified period"
+        );
+      } else {
+        console.log("[Debug] Example event:", response.data.items![0].summary);
+      }
+
+      return hasEvents;
+    } catch (error) {
+      console.error("[Debug] Error checking for events:", error);
+      return false;
+    }
+  }
+
   // API endpoint for calendar sync
   app.get("/api/sync-calendar", async (req, res) => {
     console.log("[Debug] Calendar sync endpoint hit");
@@ -648,6 +692,25 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(500).json({
           success: false,
           error: "Failed to initialize Google Calendar client",
+        });
+      }
+
+      // First check if events exist in the calendar
+      const hasEvents = await checkForEvents(calendar);
+
+      if (!hasEvents) {
+        console.log(
+          "[Debug] No events found in calendar, creating sample timeslots"
+        );
+        await createSampleTimeslots();
+
+        const sampleTimeslots = await storage.getTimeslots();
+        return res.json({
+          success: true,
+          message:
+            "No events found in calendar. Created sample timeslots instead.",
+          timeslotCount: sampleTimeslots.length,
+          usingSampleData: true,
         });
       }
 

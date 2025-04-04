@@ -35,7 +35,8 @@ export default function Calendar() {
 
   // States
   const [currentDate, setCurrentDate] = useState<Date>(() => {
-    // Use the current date instead of April 2025
+    // Force reset to current date - clear any hardcoded dates
+    console.log("[Debug] Initializing calendar with current date");
     return getNowInIsrael();
   });
   const [view, setView] = useState<"week" | "month">("week");
@@ -164,6 +165,25 @@ export default function Calendar() {
       refetch();
     }
   }, [isSyncing, timeslots.length, refetch]);
+
+  // Reset date to today if we detect a date too far in the future (1 year+)
+  useEffect(() => {
+    const today = getNowInIsrael();
+    const oneYearFromNow = new Date(today);
+    oneYearFromNow.setFullYear(today.getFullYear() + 1);
+
+    // If current date is more than a year in the future, reset to today
+    if (currentDate > oneYearFromNow) {
+      console.log(
+        "[Debug] Detected date too far in future, resetting to today:",
+        {
+          current: currentDate.toISOString(),
+          resetTo: today.toISOString(),
+        }
+      );
+      setCurrentDate(today);
+    }
+  }, [currentDate]);
 
   // Handle navigation
   const goToNextPeriod = () => {
