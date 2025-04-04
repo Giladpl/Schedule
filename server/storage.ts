@@ -219,21 +219,38 @@ export class MemStorage implements IStorage {
   }
 
   async createTimeslot(insertTimeslot: InsertTimeslot): Promise<Timeslot> {
-    const id = this.timeslotCurrentId++;
+    try {
+      // Ensure timeslots is a Map
+      if (!(this.timeslots instanceof Map)) {
+        console.log(
+          "[Debug] timeslots is not a Map in createTimeslot, re-initializing"
+        );
+        this.timeslots = new Map();
+      }
 
-    // Ensure all required fields have values
-    const timeslot: Timeslot = {
-      ...insertTimeslot,
-      id,
-      clientType: insertTimeslot.clientType || "all",
-      meetingTypes: insertTimeslot.meetingTypes || "",
-      isAvailable: insertTimeslot.isAvailable ?? true,
-      googleEventId: insertTimeslot.googleEventId || null,
-      parentEventId: insertTimeslot.parentEventId || null,
-    };
+      const id = this.timeslotCurrentId++;
 
-    this.timeslots.set(id, timeslot);
-    return timeslot;
+      // Ensure all required fields have values
+      const timeslot: Timeslot = {
+        ...insertTimeslot,
+        id,
+        clientType: insertTimeslot.clientType || "all",
+        meetingTypes: insertTimeslot.meetingTypes || "",
+        isAvailable: insertTimeslot.isAvailable ?? true,
+        googleEventId: insertTimeslot.googleEventId || null,
+        parentEventId: insertTimeslot.parentEventId || null,
+      };
+
+      this.timeslots.set(id, timeslot);
+      return timeslot;
+    } catch (error) {
+      console.error("[Debug] Error in createTimeslot:", error);
+      throw new Error(
+        `Failed to create timeslot: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
   }
 
   async updateTimeslot(
@@ -258,7 +275,20 @@ export class MemStorage implements IStorage {
 
   async clearTimeslots(): Promise<void> {
     console.log("[Debug] Clearing all timeslots from storage");
-    this.timeslots.clear();
+    try {
+      // Re-initialize the map if it's not a Map
+      if (!(this.timeslots instanceof Map)) {
+        console.log("[Debug] timeslots is not a Map, re-initializing");
+        this.timeslots = new Map();
+      } else {
+        this.timeslots.clear();
+      }
+      console.log("[Debug] Timeslots cleared successfully");
+    } catch (error) {
+      console.error("[Debug] Error clearing timeslots:", error);
+      // Ensure we have a valid Map
+      this.timeslots = new Map();
+    }
   }
 
   async createTimeslotsForSlotSplit(

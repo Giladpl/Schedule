@@ -1186,6 +1186,16 @@ async function syncWithGoogleCalendar(
       `[Debug] Fetching events from ${now.toISOString()} to ${threeMonthsLater.toISOString()}`
     );
 
+    // First clear existing timeslots before sync to prevent duplicates
+    try {
+      console.log("[Debug] Clearing existing timeslots");
+      await storage.clearTimeslots();
+      console.log("[Debug] Successfully cleared existing timeslots");
+    } catch (clearError) {
+      console.error("[Debug] Error clearing timeslots:", clearError);
+      // Continue with sync anyway
+    }
+
     const response = await calendarClient.events.list({
       calendarId: process.env.GOOGLE_CALENDAR_ID!,
       timeMin: now.toISOString(),
@@ -1198,10 +1208,6 @@ async function syncWithGoogleCalendar(
     console.log(
       `[Debug] Retrieved ${events.length} events from Google Calendar`
     );
-
-    // Clear existing timeslots before sync to prevent duplicates
-    await storage.clearTimeslots();
-    console.log("[Debug] Cleared existing timeslots");
 
     let convertedCount = 0;
     let errorCount = 0;
