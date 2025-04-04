@@ -1214,6 +1214,27 @@ async function syncWithGoogleCalendar(
       `[Debug] Retrieved ${events.length} events from Google Calendar`
     );
 
+    // Add debug for events on Saturday
+    const saturdayEvents = events.filter((event) => {
+      if (!event.start?.dateTime) return false;
+      const eventDate = new Date(event.start.dateTime);
+      // In JavaScript, 6 = Saturday (0 = Sunday, 1 = Monday, etc.)
+      return eventDate.getDay() === 6;
+    });
+
+    console.log(`[Debug] Found ${saturdayEvents.length} Saturday events`);
+
+    // Log details of Saturday events
+    if (saturdayEvents.length > 0) {
+      saturdayEvents.forEach((event, index) => {
+        console.log(`[Debug] Saturday event #${index + 1}: ${event.summary}`);
+        console.log(
+          `  Date: ${new Date(event.start!.dateTime!).toISOString()}`
+        );
+        console.log(`  Description: ${event.description || "No description"}`);
+      });
+    }
+
     let convertedCount = 0;
     let errorCount = 0;
 
@@ -1227,16 +1248,19 @@ async function syncWithGoogleCalendar(
           continue;
         }
 
+        const eventDate = new Date(event.start.dateTime);
+        const isSaturday = eventDate.getDay() === 6;
+
         // Get client type and allowed meeting types from event description or summary
         const clientType = extractClientType(event);
         const meetingTypes = extractMeetingTypes(event);
 
         console.log(
-          `[Debug] Processing event: ${event.summary}, Client: ${clientType}, Meeting types: ${meetingTypes}`
+          `[Debug] Processing event: ${event.summary}, Client: ${clientType}, Meeting types: ${meetingTypes}, IsSaturday: ${isSaturday}`
         );
 
         // Create a timeslot from the event
-        await storage.createTimeslot({
+        const createdTimeslot = await storage.createTimeslot({
           startTime: new Date(event.start.dateTime),
           endTime: new Date(event.end.dateTime),
           clientType,
@@ -1245,6 +1269,14 @@ async function syncWithGoogleCalendar(
           googleEventId: event.id || null,
           parentEventId: null,
         });
+
+        if (isSaturday) {
+          console.log(
+            `[Debug] Successfully created Saturday timeslot: ${JSON.stringify(
+              createdTimeslot
+            )}`
+          );
+        }
 
         convertedCount++;
       } catch (error) {
@@ -1260,6 +1292,26 @@ async function syncWithGoogleCalendar(
     // Verify timeslots after sync
     const timeslots = await storage.getTimeslots();
     console.log(`[Debug] Total timeslots after sync: ${timeslots.length}`);
+
+    // Check how many Saturday timeslots were saved
+    const saturdayTimeslots = timeslots.filter((ts) => {
+      const date = new Date(ts.startTime);
+      return date.getDay() === 6;
+    });
+
+    console.log(
+      `[Debug] Saturday timeslots in storage: ${saturdayTimeslots.length}`
+    );
+
+    if (saturdayTimeslots.length > 0) {
+      console.log(
+        `[Debug] First Saturday timeslot: ${JSON.stringify(
+          saturdayTimeslots[0]
+        )}`
+      );
+    } else {
+      console.log(`[Debug] No Saturday timeslots found in storage after sync`);
+    }
 
     if (timeslots.length > 0) {
       const firstTimeslot = timeslots[0];

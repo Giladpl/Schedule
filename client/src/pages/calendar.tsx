@@ -127,6 +127,20 @@ export default function Calendar() {
         }`;
         console.log(`[Debug] Calendar making API request to: ${apiUrl}`);
 
+        // Check if the date range includes Saturday
+        const hasSaturday = Array.from(
+          {
+            length: Math.ceil(
+              (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+            ),
+          },
+          (_, i) => new Date(startDate.getTime() + i * (1000 * 60 * 60 * 24))
+        ).some((date) => date.getDay() === 6);
+
+        console.log(
+          `[Debug] Date range ${startDate.toISOString()} to ${endDate.toISOString()} includes Saturday: ${hasSaturday}`
+        );
+
         const result = await fetchTimeslots(
           startDate,
           endDate,
@@ -137,6 +151,28 @@ export default function Calendar() {
         console.log(
           `[Debug] Calendar received ${result.length} timeslots from API`
         );
+
+        // Check for Saturday timeslots in the result
+        const saturdayTimeslots = result.filter((slot) => {
+          const date = new Date(slot.startTime);
+          return date.getDay() === 6;
+        });
+
+        console.log(
+          `[Debug] Found ${saturdayTimeslots.length} Saturday timeslots in API response`
+        );
+
+        if (saturdayTimeslots.length > 0) {
+          console.log(
+            `[Debug] First Saturday timeslot: ${JSON.stringify(
+              saturdayTimeslots[0]
+            )}`
+          );
+        } else if (hasSaturday) {
+          console.log(
+            `[Debug] No Saturday timeslots found although the date range includes Saturday`
+          );
+        }
 
         return result;
       } catch (e) {

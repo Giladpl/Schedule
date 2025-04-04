@@ -287,7 +287,7 @@ function ExpandableTimeslots({
   );
 }
 
-export default function WeekView({
+export function WeekView({
   weekDays,
   timeslots,
   onSelectTimeslot,
@@ -303,6 +303,41 @@ export default function WeekView({
   }, []);
 
   const today = getNowInIsrael();
+
+  // Track if we have any Saturday in the weekDays
+  const hasSaturday = weekDays.some((day) => day.getDay() === 6);
+  console.log(`[Debug WeekView] Week view contains Saturday: ${hasSaturday}`);
+
+  // Check if there are any Saturday timeslots in the provided timeslots
+  const saturdayTimeslots = timeslots.filter((slot) => {
+    const date = new Date(slot.startTime);
+    return date.getDay() === 6;
+  });
+
+  console.log(
+    `[Debug WeekView] Week has ${saturdayTimeslots.length} Saturday timeslots`
+  );
+
+  // For each day, check what timeslots are assigned to it
+  weekDays.forEach((day) => {
+    const isDaySaturday = day.getDay() === 6;
+    const dayTimeslots = timeslots.filter((slot) => {
+      const slotDate = new Date(slot.startTime);
+      return (
+        slotDate.getDate() === day.getDate() &&
+        slotDate.getMonth() === day.getMonth() &&
+        slotDate.getFullYear() === day.getFullYear()
+      );
+    });
+
+    if (isDaySaturday) {
+      console.log(
+        `[Debug WeekView] Saturday ${day.toISOString()} has ${
+          dayTimeslots.length
+        } timeslots`
+      );
+    }
+  });
 
   // Group timeslots by day and then by hour
   const timeslotsByDay = useMemo(() => {

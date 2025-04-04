@@ -173,52 +173,126 @@ export class MemStorage implements IStorage {
     startDate: Date,
     endDate: Date
   ): Promise<Timeslot[]> {
-    const allTimeslots = Array.from(this.timeslots.values());
-    console.log(
-      `[Debug] getTimeslotsByDateRange: Looking in ${allTimeslots.length} total timeslots`
-    );
-    console.log(
-      `[Debug] Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`
-    );
+    try {
+      console.log(
+        `[Debug] getTimeslotsByDateRange: ${startDate.toISOString()} to ${endDate.toISOString()}`
+      );
 
-    if (allTimeslots.length > 0) {
-      // Log the date range of the first few timeslots to understand what's in storage
+      // Check if the date range includes Saturday
+      const days = Math.ceil(
+        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      const dateArray = Array.from({ length: days }, (_, i) => {
+        const date = new Date(startDate);
+        date.setDate(date.getDate() + i);
+        return date;
+      });
+
+      const includedDays = dateArray.map((date) => date.getDay());
+      const hasSaturday = includedDays.includes(6);
+
+      console.log(
+        `[Debug] Date range includes these days of week: ${includedDays.join(
+          ", "
+        )}`
+      );
+      console.log(`[Debug] Date range includes Saturday: ${hasSaturday}`);
+
+      // Ensure timeslots is a Map
+      if (!(this.timeslots instanceof Map)) {
+        console.log(
+          "[Debug] timeslots is not a Map in getTimeslotsByDateRange, re-initializing"
+        );
+        this.timeslots = new Map();
+        return [];
+      }
+
+      const allTimeslots = Array.from(this.timeslots.values());
+      console.log(`[Debug] Total timeslots in storage: ${allTimeslots.length}`);
+
+      // Check for Saturday timeslots in storage
+      const saturdayTimeslots = allTimeslots.filter((ts) => {
+        const date = new Date(ts.startTime);
+        return date.getDay() === 6;
+      });
+
+      console.log(
+        `[Debug] Saturday timeslots in storage: ${saturdayTimeslots.length}`
+      );
+
+      if (saturdayTimeslots.length > 0) {
+        console.log(
+          `[Debug] Sample Saturday timeslot: ${JSON.stringify(
+            saturdayTimeslots[0]
+          )}`
+        );
+      }
+
+      // Get a few sample timeslots to see what's in storage
       const sampleTimeslots = allTimeslots.slice(
         0,
         Math.min(3, allTimeslots.length)
       );
-      console.log(`[Debug] Sample timeslots in storage:`);
-      sampleTimeslots.forEach((ts, i) => {
-        console.log(
-          `[Debug] Timeslot ${i}: ${new Date(
-            ts.startTime
-          ).toISOString()} to ${new Date(
-            ts.endTime
-          ).toISOString()}, isAvailable: ${ts.isAvailable}`
-        );
+      if (sampleTimeslots.length > 0) {
+        console.log(`[Debug] Sample timeslots in storage:`);
+        sampleTimeslots.forEach((ts, i) => {
+          const date = new Date(ts.startTime);
+          console.log(
+            `[Debug] Timeslot ${i}: ${new Date(
+              ts.startTime
+            ).toISOString()} to ${new Date(
+              ts.endTime
+            ).toISOString()}, isAvailable: ${
+              ts.isAvailable
+            }, day of week: ${date.getDay()}`
+          );
+        });
+      }
+
+      // First filter only by date range without availability check
+      const dateMatchedTimeslots = allTimeslots.filter(
+        (timeslot) =>
+          new Date(timeslot.startTime) >= startDate &&
+          new Date(timeslot.endTime) <= endDate
+      );
+
+      console.log(
+        `[Debug] Found ${dateMatchedTimeslots.length} timeslots matching date range before availability check`
+      );
+
+      // Check for Saturday timeslots in date-matched results
+      const dateMatchedSaturdayTimeslots = dateMatchedTimeslots.filter((ts) => {
+        const date = new Date(ts.startTime);
+        return date.getDay() === 6;
       });
+
+      console.log(
+        `[Debug] Saturday timeslots after date filter: ${dateMatchedSaturdayTimeslots.length}`
+      );
+
+      // Then apply availability filter
+      const result = dateMatchedTimeslots.filter(
+        (timeslot) => timeslot.isAvailable
+      );
+      console.log(
+        `[Debug] Returning ${result.length} available timeslots within date range`
+      );
+
+      // Final check for Saturday timeslots in results
+      const resultSaturdayTimeslots = result.filter((ts) => {
+        const date = new Date(ts.startTime);
+        return date.getDay() === 6;
+      });
+
+      console.log(
+        `[Debug] Saturday timeslots in final result: ${resultSaturdayTimeslots.length}`
+      );
+
+      return result;
+    } catch (error) {
+      console.error("[Debug] Error in getTimeslotsByDateRange:", error);
+      return [];
     }
-
-    // First filter only by date range without availability check
-    const dateMatchedTimeslots = allTimeslots.filter(
-      (timeslot) =>
-        new Date(timeslot.startTime) >= startDate &&
-        new Date(timeslot.endTime) <= endDate
-    );
-
-    console.log(
-      `[Debug] Found ${dateMatchedTimeslots.length} timeslots matching date range before availability check`
-    );
-
-    // Then apply availability filter
-    const result = dateMatchedTimeslots.filter(
-      (timeslot) => timeslot.isAvailable
-    );
-    console.log(
-      `[Debug] Returning ${result.length} available timeslots within date range`
-    );
-
-    return result;
   }
 
   async getTimeslotsByClientType(clientType: string): Promise<Timeslot[]> {
