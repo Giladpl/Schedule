@@ -260,23 +260,57 @@ export class MemStorage implements IStorage {
         });
       }
 
-      // Improved date comparison for more accurate matching
-      // First filter only by date range without availability check
+      // Improved date comparison for more accurate matching based on calendar days
       const dateMatchedTimeslots = allTimeslots.filter((timeslot) => {
-        const slotStartTime = new Date(timeslot.startTime).getTime();
-        const slotEndTime = new Date(timeslot.endTime).getTime();
+        const slotStartDate = new Date(timeslot.startTime);
+        const slotEndDate = new Date(timeslot.endTime);
 
-        // A timeslot is in range if it starts after or at startDate
-        // AND ends before or at endDate
-        const inRange = slotStartTime >= startMs && slotEndTime <= endMs;
+        // Convert dates to day precision for comparison (ignoring time)
+        const slotStartDay = new Date(
+          slotStartDate.getFullYear(),
+          slotStartDate.getMonth(),
+          slotStartDate.getDate()
+        );
+        const slotEndDay = new Date(
+          slotEndDate.getFullYear(),
+          slotEndDate.getMonth(),
+          slotEndDate.getDate()
+        );
 
-        // For debug, log Saturday timeslots that are being filtered out
-        const isSaturday = new Date(timeslot.startTime).getDay() === 6;
-        if (isSaturday) {
+        const rangeStartDay = new Date(
+          startDate.getFullYear(),
+          startDate.getMonth(),
+          startDate.getDate()
+        );
+        const rangeEndDay = new Date(
+          endDate.getFullYear(),
+          endDate.getMonth(),
+          endDate.getDate()
+        );
+
+        // A timeslot is in range if:
+        // 1. Its day falls within the date range
+        // 2. For specific days like Saturday, this ensures proper inclusion
+        const inRange =
+          (slotStartDay >= rangeStartDay && slotStartDay <= rangeEndDay) || // Start day is in range
+          (slotEndDay >= rangeStartDay && slotEndDay <= rangeEndDay); // End day is in range
+
+        // Log for debugging
+        const dayOfWeek = slotStartDate.getDay();
+        const dayNames = [
+          "יום ראשון",
+          "יום שני",
+          "יום שלישי",
+          "יום רביעי",
+          "יום חמישי",
+          "יום שישי",
+          "שבת",
+        ];
+
+        if (dayOfWeek === 6) {
+          // Still log Saturdays for backwards compatibility with existing debug code
           console.log(
-            `[Debug] Saturday timeslot (${new Date(
-              timeslot.startTime
-            ).toISOString()}) in range: ${inRange}`
+            `[Debug] Saturday timeslot (${slotStartDate.toISOString()}) in range: ${inRange}`
           );
         }
 
@@ -315,10 +349,10 @@ export class MemStorage implements IStorage {
       });
 
       console.log(
-        `[Debug] Returning ${result.length} timeslots within date range (including all Saturday timeslots)`
+        `[Debug] Returning ${result.length} timeslots within date range`
       );
 
-      // Final check for Saturday timeslots in results
+      // Final check for Saturday timeslots in results - לוגים בלבד
       const resultSaturdayTimeslots = result.filter((ts) => {
         const date = new Date(ts.startTime);
         return date.getDay() === 6;
