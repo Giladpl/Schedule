@@ -47,11 +47,6 @@ export default function Sidebar({
       });
       queryClient.invalidateQueries({ queryKey: ["/api/client-data"] });
 
-      // Re-initialize the client display names with new rules
-      import("@/lib/calendarService").then((module) => {
-        module.initClientDisplayNames().catch(console.error);
-      });
-
       toast({
         title: "Client Rules Refreshed",
         description: `Successfully updated ${data.rules.length} client rules from Google Sheets.`,
@@ -69,26 +64,13 @@ export default function Sidebar({
   });
 
   useEffect(() => {
-    const loadClients = async () => {
-      try {
-        const clientData = await fetchClientData();
-        setClients(clientData.clients);
-      } catch (error) {
-        console.error("Error loading client data:", error);
-      }
-    };
-
-    loadClients();
-  }, []);
+    if (clientData) {
+      setClients(clientData.clients);
+    }
+  }, [clientData]);
 
   const handleRefresh = async () => {
-    try {
-      await refreshClientRules();
-      const clientData = await fetchClientData();
-      setClients(clientData.clients);
-    } catch (error) {
-      console.error("Error refreshing client data:", error);
-    }
+    refreshRules();
   };
 
   const handleTypeChange = (type: string) => {

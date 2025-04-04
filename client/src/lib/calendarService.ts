@@ -95,7 +95,7 @@ export async function fetchTimeslots(
     );
 
     if (saturdayTimeslots.length > 0) {
-      console.log("[Debug] Saturday timeslots:");
+      console.log("[Debug] Saturday timeslots found in response:");
       saturdayTimeslots.forEach((slot, i) => {
         console.log(
           `[Debug]   ${i + 1}. ${new Date(
@@ -108,33 +108,111 @@ export async function fetchTimeslots(
         "[Debug] No Saturday timeslots were returned despite Saturday being in the date range"
       );
 
-      // WORKAROUND: If we don't get Saturday events but we know they should exist,
-      // make a direct API call to the backend (not through Vite proxy)
-      if (containsSaturday && response.length === 0) {
-        console.log("[Debug] Trying direct backend call for Saturday events");
+      // Get all Saturdays in the requested range
+      const saturdaysInRange = getSaturdaysInRange(startDate, endDate);
+      console.log(
+        `[Debug] Found ${saturdaysInRange.length} Saturdays in date range`
+      );
 
-        try {
-          // Use direct call to backend
-          const directBackendUrl = "http://localhost:3000/api/timeslots";
-          const params = new URLSearchParams();
-          params.append("start", startDate.toISOString());
-          params.append("end", endDate.toISOString());
+      // Enhanced WORKAROUND: If we don't get Saturday events but we know they should exist,
+      // try a direct API call with special Saturday-specific parameters
+      try {
+        console.log("[Debug] Trying direct Saturday timeslot request");
 
-          const directResponse = await fetch(
-            `${directBackendUrl}?${params.toString()}`
+        // For each Saturday in the range, try to fetch timeslots for just that day
+        let allSaturdayTimeslots: Timeslot[] = [];
+
+        for (const saturday of saturdaysInRange) {
+          // Create a start date at 00:00 and end date at 23:59:59 for just this Saturday
+          const saturdayStart = new Date(saturday);
+          saturdayStart.setHours(0, 0, 0, 0);
+
+          const saturdayEnd = new Date(saturday);
+          saturdayEnd.setHours(23, 59, 59, 999);
+
+          console.log(
+            `[Debug] Fetching timeslots specifically for Saturday: ${saturdayStart.toISOString()} to ${saturdayEnd.toISOString()}`
           );
-          if (directResponse.ok) {
-            const saturdayEvents = await directResponse.json();
-            if (saturdayEvents && saturdayEvents.length > 0) {
+
+          // First try the regular URL with the Vite proxy
+          const saturdayUrl = new URL("/api/timeslots", window.location.origin);
+          saturdayUrl.searchParams.append("start", saturdayStart.toISOString());
+          saturdayUrl.searchParams.append("end", saturdayEnd.toISOString());
+
+          try {
+            const saturdayResponse = await apiRequest<Timeslot[]>(
+              "GET",
+              saturdayUrl.toString(),
+              undefined,
+              { signal: controller.signal }
+            );
+
+            if (saturdayResponse && saturdayResponse.length > 0) {
               console.log(
-                `[Debug] Found ${saturdayEvents.length} events directly from backend`
+                `[Debug] Found ${saturdayResponse.length} Saturday timeslots`
               );
-              return saturdayEvents;
+              allSaturdayTimeslots = [
+                ...allSaturdayTimeslots,
+                ...saturdayResponse,
+              ];
+            }
+          } catch (satError) {
+            console.log(
+              `[Debug] Error fetching Saturday timeslots via proxy: ${satError}`
+            );
+
+            // If that fails, try direct backend call
+            try {
+              const directBackendUrl = "http://localhost:3000/api/timeslots";
+              const params = new URLSearchParams();
+              params.append("start", saturdayStart.toISOString());
+              params.append("end", saturdayEnd.toISOString());
+
+              const directResponse = await fetch(
+                `${directBackendUrl}?${params.toString()}`
+              );
+              if (directResponse.ok) {
+                const saturdayEvents = await directResponse.json();
+                if (saturdayEvents && saturdayEvents.length > 0) {
+                  console.log(
+                    `[Debug] Found ${saturdayEvents.length} Saturday events directly from backend`
+                  );
+                  allSaturdayTimeslots = [
+                    ...allSaturdayTimeslots,
+                    ...saturdayEvents,
+                  ];
+                }
+              }
+            } catch (directError) {
+              console.error(
+                "[Debug] Direct backend call for Saturday failed:",
+                directError
+              );
             }
           }
-        } catch (directError) {
-          console.error("[Debug] Direct backend call failed:", directError);
         }
+
+        // Merge Saturday timeslots with regular response
+        if (allSaturdayTimeslots.length > 0) {
+          console.log(
+            `[Debug] Adding ${allSaturdayTimeslots.length} Saturday timeslots to response`
+          );
+
+          // Ensure we don't have duplicates
+          const existingIds = new Set(response.map((slot) => slot.id));
+          const newSaturdayTimeslots = allSaturdayTimeslots.filter(
+            (slot) => !existingIds.has(slot.id)
+          );
+
+          if (newSaturdayTimeslots.length > 0) {
+            console.log(
+              `[Debug] Adding ${newSaturdayTimeslots.length} new Saturday timeslots`
+            );
+            return [...response, ...newSaturdayTimeslots];
+          }
+        }
+      } catch (error) {
+        console.error("[Debug] Error in Saturday timeslot recovery:", error);
       }
     }
 
@@ -283,12 +361,22 @@ export interface ClientRule {
 
 let clientRules: ClientRule[] = [];
 
-export async function refreshClientRules(): Promise<ClientRule[]> {
+export async function refreshClientRules(): Promise<{
+  rules: ClientRule[];
+  message: string;
+}> {
   try {
-    const data = await apiRequest<ClientData>("GET", "/api/client-data");
-    clientRules = data.clients;
-    console.log("Client rules loaded:", clientRules);
-    return clientRules;
+    // Make a POST request to the refresh endpoint
+    const response = await apiRequest<{ rules: ClientRule[]; message: string }>(
+      "POST",
+      "/api/refresh-client-rules"
+    );
+
+    // Update the local cache
+    clientRules = response.rules;
+    console.log("Client rules refreshed from Google Sheets:", response.message);
+
+    return response;
   } catch (error) {
     console.error("Error refreshing client rules:", error);
     throw error;
