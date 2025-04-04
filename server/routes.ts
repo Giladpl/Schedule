@@ -1,5 +1,5 @@
-import { bookingFormSchema } from "@shared/schema";
-import type { Express } from "express";
+import { bookingFormSchema, Timeslot } from "@shared/schema";
+import { Express } from "express";
 import { calendar_v3, google, sheets_v4 } from "googleapis";
 import { fromZodError } from "zod-validation-error";
 import { storage } from "./storage";
@@ -73,146 +73,96 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // API routes
   app.get("/api/timeslots", async (req, res) => {
-    console.log("[Debug] Timeslots endpoint hit");
-    console.log("[Debug] Query params:", req.query);
-    console.log("[Debug] Request headers:", req.headers);
-    console.log(
-      `[Debug] Full request URL: ${req.protocol}://${req.get("host")}${
-        req.originalUrl
-      }`
-    );
     try {
       const { start, end, type, meetingType } = req.query;
-      console.log("[Debug] Parsed query params:", {
-        start,
-        end,
-        type,
-        meetingType,
-      });
 
-      let timeslots;
-
-      if (start && end) {
-        const startDate = new Date(start as string);
-        const endDate = new Date(end as string);
-        console.log(
-          `[Debug] Fetching timeslots between ${startDate.toISOString()} and ${endDate.toISOString()}`
-        );
-
-        if (type && meetingType) {
-          // Filter by date range, client type, and meeting type
-          timeslots = await storage.getTimeslotsByDateRange(startDate, endDate);
-
-          // Special handling for 'all' values
-          if (type === "all" && meetingType === "all") {
-            // Return all timeslots in date range
-            console.log(
-              "Both type and meetingType are 'all', returning all timeslots in date range"
-            );
-          } else if (type === "all") {
-            // Filter only by meeting type
-            timeslots = timeslots.filter((ts) =>
-              ts.meetingTypes.includes(meetingType as string)
-            );
-            console.log(
-              "Type is 'all', filtered by meeting type only. Found",
-              timeslots.length,
-              "timeslots for meeting type",
-              meetingType
-            );
-          } else if (meetingType === "all") {
-            // Filter only by client type
-            timeslots = timeslots.filter((ts) => ts.clientType === type);
-            console.log(
-              "MeetingType is 'all', filtered by client type only. Found",
-              timeslots.length,
-              "timeslots for type",
-              type
-            );
-          } else {
-            // Normal filter by both client type and meeting type
-            timeslots = timeslots.filter(
-              (ts) =>
-                ts.clientType === type &&
-                ts.meetingTypes.includes(meetingType as string)
-            );
-            console.log(
-              "Found",
-              timeslots.length,
-              "timeslots for type",
-              type,
-              "and meeting type",
-              meetingType
-            );
-          }
-        } else if (type) {
-          // Filter by date range and client type
-          timeslots = await storage.getTimeslotsByDateRange(startDate, endDate);
-
-          // Special handling for 'all' type
-          if (type === "all") {
-            console.log("Type is 'all', returning all timeslots in date range");
-          } else {
-            timeslots = timeslots.filter((ts) => ts.clientType === type);
-            console.log("Found", timeslots.length, "timeslots for type", type);
-          }
-        } else if (meetingType) {
-          // Filter by date range and meeting type
-          timeslots = await storage.getTimeslotsByDateRange(startDate, endDate);
-
-          // Special handling for 'all' meeting type
-          if (meetingType === "all") {
-            console.log(
-              "MeetingType is 'all', returning all timeslots in date range"
-            );
-          } else {
-            timeslots = timeslots.filter((ts) =>
-              ts.meetingTypes.includes(meetingType as string)
-            );
-            console.log(
-              "Found",
-              timeslots.length,
-              "timeslots for meeting type",
-              meetingType
-            );
-          }
-        } else {
-          // Just filter by date range
-          timeslots = await storage.getTimeslotsByDateRange(startDate, endDate);
-          console.log("Found", timeslots.length, "timeslots in date range");
-        }
-
-        console.log("Found", timeslots.length, "available timeslots");
-      } else {
-        // No date range provided, return all available timeslots
-        console.log(
-          "No date range provided, returning all available timeslots"
-        );
-        timeslots = await storage.getTimeslots();
-        timeslots = timeslots.filter((ts) => ts.isAvailable);
+      // Validate start and end are provided
+      if (!start || !end) {
+        return res.status(400).json({
+          error: "Both start and end dates are required",
+        });
       }
+
+      // Parse dates
+      const startDate = new Date(start as string);
+      const endDate = new Date(end as string);
+
+      // Check for Saturday in the date range
+      const hasSaturday = checkDateRangeContainsSaturday(startDate, endDate);
+      console.log(`[Debug API] Date range includes Saturday: ${hasSaturday}`);
+
+      // Get timeslots for date range
+      let timeslots = await storage.getTimeslotsByDateRange(startDate, endDate);
 
       console.log(
-        `[Debug] Final response has ${timeslots?.length || 0} timeslots`
+        `[Debug API] Found ${timeslots.length} timeslots in date range`
       );
-      if (timeslots?.length > 0) {
+
+      // Special handling for Saturday - ensure we include Saturday events even if not marked as available
+      if (hasSaturday) {
+        // Get all timeslots (including unavailable ones)
+        const allTimeslots = await storage.getTimeslots();
+
+        // Filter to only include those in our date range
+        const timslotsInRange = allTimeslots.filter((slot) => {
+          const slotStartTime = new Date(slot.startTime);
+          const slotEndTime = new Date(slot.endTime);
+          return slotStartTime >= startDate && slotEndTime <= endDate;
+        });
+
+        // Filter for Saturday timeslots
+        const saturdayTimeslots = timslotsInRange.filter((slot: Timeslot) => {
+          const slotDate = new Date(slot.startTime);
+          return slotDate.getDay() === 6; // 6 = Saturday
+        });
+
         console.log(
-          `[Debug] First timeslot in response: ${JSON.stringify(timeslots[0])}`
+          `[Debug API] Found ${saturdayTimeslots.length} Saturday timeslots in date range`
         );
-        console.log(
-          `[Debug] Last timeslot in response: ${JSON.stringify(
-            timeslots[timeslots.length - 1]
-          )}`
-        );
-      } else {
-        console.log(`[Debug] No timeslots found in final response`);
+
+        if (saturdayTimeslots.length > 0) {
+          // Force Saturday timeslots to be available
+          const availableSaturdayTimeslots = saturdayTimeslots.map(
+            (slot: Timeslot) => ({
+              ...slot,
+              isAvailable: true,
+            })
+          );
+
+          // Add the forced available Saturday timeslots to our results
+          // Filter out any existing ones first to avoid duplicates
+          const nonSaturdayTimeslots = timeslots.filter((slot) => {
+            const slotDate = new Date(slot.startTime);
+            return slotDate.getDay() !== 6;
+          });
+
+          // Combine non-Saturday with forced-available Saturday timeslots
+          timeslots = [...nonSaturdayTimeslots, ...availableSaturdayTimeslots];
+
+          console.log(
+            `[Debug API] Added ${availableSaturdayTimeslots.length} Saturday timeslots to the response`
+          );
+        }
       }
 
-      console.log("Sending timeslots response");
+      // Apply client type filter if provided
+      if (type && type !== "all") {
+        timeslots = timeslots.filter(
+          (slot) => slot.clientType === type || slot.clientType === "all"
+        );
+      }
+
+      // Apply meeting type filter if provided
+      if (meetingType && meetingType !== "all") {
+        timeslots = timeslots.filter((slot) =>
+          slot.meetingTypes.includes(meetingType as string)
+        );
+      }
+
       res.json(timeslots);
     } catch (error) {
-      console.error("Error fetching timeslots:", error);
-      res.status(500).json({ error: "Failed to fetch timeslots" });
+      console.error("Error getting timeslots:", error);
+      res.status(500).json({ error: "Failed to get timeslots" });
     }
   });
 
@@ -1280,13 +1230,20 @@ async function syncWithGoogleCalendar(
           `[Debug] Processing event: ${event.summary}, Client: ${clientType}, Meeting types: ${meetingTypes}, IsSaturday: ${isSaturday}`
         );
 
+        // For Saturday events, always set isAvailable to true
+        const isAvailable = isSaturday ? true : true; // Default all events to available, but explicitly handle Saturday
+
+        if (isSaturday) {
+          console.log(`[Debug] Saturday event - forcing isAvailable=true`);
+        }
+
         // Create a timeslot from the event
         const createdTimeslot = await storage.createTimeslot({
           startTime: new Date(event.start.dateTime),
           endTime: new Date(event.end.dateTime),
           clientType,
           meetingTypes,
-          isAvailable: true,
+          isAvailable,
           googleEventId: event.id || null,
           parentEventId: null,
         });
@@ -1299,7 +1256,7 @@ async function syncWithGoogleCalendar(
               createdTimeslot.startTime
             ).toISOString()}, Day=${new Date(
               createdTimeslot.startTime
-            ).getDay()}`
+            ).getDay()}, isAvailable=${createdTimeslot.isAvailable}`
           );
           saturdayConvertedCount++;
         }
@@ -1542,6 +1499,20 @@ function extractClientType(event: calendar_v3.Schema$Event): string {
 function extractMeetingTypes(event: calendar_v3.Schema$Event): string {
   const meetingTypes: string[] = [];
 
+  // Special handling for Saturday events - always mark them as available for all meeting types
+  if (event.start?.dateTime) {
+    const eventDate = new Date(event.start.dateTime);
+    const isSaturday = eventDate.getDay() === 6;
+
+    if (isSaturday) {
+      console.log(`[Debug] Saturday event detected: ${event.summary}`);
+      console.log(
+        `[Debug] Automatically marking Saturday event as available for all meeting types`
+      );
+      return "טלפון,זום,פגישה"; // All meeting types for Saturday
+    }
+  }
+
   // Check in both description and summary
   const textToCheck = [event.description || "", event.summary || ""]
     .join(" ")
@@ -1552,13 +1523,19 @@ function extractMeetingTypes(event: calendar_v3.Schema$Event): string {
     טלפון: "טלפון",
     phone: "טלפון",
     call: "טלפון",
+    שיחה: "טלפון",
+
     זום: "זום",
     zoom: "זום",
     video: "זום",
+    וידאו: "זום",
+
     פגישה: "פגישה",
     meeting: "פגישה",
     "in-person": "פגישה",
     face: "פגישה",
+    פרונטלי: "פגישה",
+    פנים: "פגישה",
   };
 
   // Check for each keyword
@@ -1568,12 +1545,54 @@ function extractMeetingTypes(event: calendar_v3.Schema$Event): string {
     }
   });
 
-  // If no types found, allow all types
+  // For events with "Available" in the text but no specific meeting types,
+  // consider them available for all meeting types
+  if (meetingTypes.length === 0) {
+    if (
+      textToCheck.includes("available") ||
+      textToCheck.includes("פנוי") ||
+      textToCheck.includes("זמין") ||
+      textToCheck.includes("פתוח")
+    ) {
+      console.log(
+        `[Debug] Event with "Available" keyword detected: ${event.summary}`
+      );
+      return "טלפון,זום,פגישה";
+    }
+  }
+
+  // If no types found, allow all types as default
   if (meetingTypes.length === 0) {
     return "טלפון,זום,פגישה";
   }
 
-  return meetingTypes
+  const result = meetingTypes
     .filter((value, index, self) => self.indexOf(value) === index)
     .join(",");
+
+  console.log(
+    `[Debug] Extracted meeting types for event "${event.summary}": ${result}`
+  );
+  return result;
+}
+
+// Helper function to check if a date range contains Saturday
+function checkDateRangeContainsSaturday(
+  startDate: Date,
+  endDate: Date
+): boolean {
+  const dayMs = 24 * 60 * 60 * 1000; // One day in milliseconds
+  let currentMs = startDate.getTime();
+  const endMs = endDate.getTime();
+
+  while (currentMs <= endMs) {
+    const currentDate = new Date(currentMs);
+    if (currentDate.getDay() === 6) {
+      // 6 = Saturday
+      return true;
+    }
+    currentMs += dayMs;
+  }
+
+  return false;
 }
