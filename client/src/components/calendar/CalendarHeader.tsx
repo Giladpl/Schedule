@@ -151,6 +151,20 @@ export default function CalendarHeader({
         </div>
 
         <div className="flex items-center space-x-2">
+          {/* Admin Toggle Button - Only visible for admins */}
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onViewModeToggle}
+              className="text-sm bg-blue-600 text-white hover:bg-blue-700 hover:text-white border-blue-600 px-4 py-2 rounded-md mr-2"
+            >
+              {window.location.pathname === "/admin"
+                ? "מעבר לתצוגת לקוחות"
+                : "מעבר לתצוגת אדמין"}
+            </Button>
+          )}
+
           <Button
             variant="ghost"
             size="icon"
@@ -173,21 +187,6 @@ export default function CalendarHeader({
               <path d="M12 8h.01" />
             </svg>
           </Button>
-
-          {/* Admin Toggle Button - Only visible for admins */}
-          {isAdmin && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onViewModeToggle}
-              className="text-sm text-[#1a73e8] border-[#dadce0] hover:bg-[#f1f3f4] px-3"
-            >
-              {window.location.pathname === "/admin"
-                ? "Client View"
-                : "Admin View"}
-            </Button>
-          )}
-
           <Button
             variant="ghost"
             size="icon"
