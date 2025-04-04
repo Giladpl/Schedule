@@ -11,7 +11,11 @@ import MonthView from "@/components/calendar/MonthView";
 import Sidebar from "@/components/calendar/Sidebar";
 import WeekView from "@/components/calendar/WeekView";
 
-import { createBooking, fetchTimeslots } from "@/lib/calendarService";
+import {
+  createBooking,
+  fetchTimeslots,
+  syncCalendar,
+} from "@/lib/calendarService";
 import { getNowInIsrael } from "@/lib/timeUtils";
 import {
   addDays,
@@ -55,6 +59,9 @@ export default function Calendar() {
   );
   const [meetingType, setMeetingType] = useState<string>("all");
 
+  // Add state to track sync status
+  const [isSyncing, setIsSyncing] = useState(false);
+
   // Calculate date ranges based on current date
   const weekDays = getWeekDays(currentDate);
   const startDate =
@@ -62,21 +69,61 @@ export default function Calendar() {
   const endDate =
     view === "week" ? endOfWeek(currentDate) : endOfMonth(currentDate);
 
-  // Fetch timeslots
+  // Sync calendar on component mount
+  useEffect(() => {
+    const syncGoogleCalendar = async () => {
+      setIsSyncing(true);
+      try {
+        await syncCalendar();
+        console.log("Calendar synced successfully");
+      } catch (error) {
+        console.error("Error syncing calendar:", error);
+        toast({
+          title: "Sync Error",
+          description:
+            "Failed to sync with Google Calendar. You may see outdated events.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsSyncing(false);
+      }
+    };
+
+    syncGoogleCalendar();
+  }, [toast]);
+
+  // Modify the fetchTimeslots to wait for sync to complete
   const {
     data: timeslots = [],
     isLoading,
-    isError,
     refetch,
   } = useQuery({
     queryKey: [
-      "/api/timeslots",
-      startDate.toISOString(),
-      endDate.toISOString(),
-      clientType,
-      meetingType,
+      "timeslots",
+      {
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        clientType,
+        meetingType,
+      },
     ],
-    queryFn: () => fetchTimeslots(startDate, endDate, clientType, meetingType),
+    queryFn: async () => {
+      // Wait for sync to complete before fetching timeslots
+      if (isSyncing) {
+        await new Promise((resolve) => {
+          const checkSync = () => {
+            if (!isSyncing) {
+              resolve(true);
+            } else {
+              setTimeout(checkSync, 100);
+            }
+          };
+          checkSync();
+        });
+      }
+      return fetchTimeslots(startDate, endDate, clientType, meetingType);
+    },
+    refetchOnWindowFocus: false,
   });
 
   // Create booking mutation
@@ -219,40 +266,6 @@ export default function Calendar() {
             </svg>
             <p className="text-[#5f6368]">Loading calendar...</p>
           </div>
-        ) : isError ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center p-6 max-w-md">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="40"
-                height="40"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-red-500 mx-auto mb-4"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              <h3 className="text-lg font-medium mb-2">
-                Failed to load calendar data
-              </h3>
-              <p className="text-[#5f6368] mb-4">
-                There was an issue fetching your calendar information. Please
-                try again.
-              </p>
-              <Button
-                onClick={() => refetch()}
-                className="bg-[#1a73e8] text-white px-4 py-2 rounded-md hover:bg-blue-600"
-              >
-                Retry
-              </Button>
-            </div>
-          </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-auto">
             {view === "week" ? (
@@ -298,4 +311,3 @@ export default function Calendar() {
 }
 
 // This is needed because calendar.tsx references Button before it's defined
-import { Button } from "@/components/ui/button";

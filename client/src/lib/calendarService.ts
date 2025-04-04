@@ -69,10 +69,14 @@ export async function createBooking(
 }
 
 export async function syncCalendar(): Promise<void> {
-  console.log(`[Debug] Syncing calendar`);
-  const response = await apiRequest<void>("GET", "/api/sync-calendar");
-  console.log(`[Debug] Sync response:`, response);
-  return response;
+  console.log(`[Debug] Syncing calendar with Google`);
+  try {
+    await apiRequest<void>("GET", "/api/sync-calendar");
+    console.log(`[Debug] Calendar synced successfully`);
+  } catch (error) {
+    console.error(`[Debug] Error syncing calendar:`, error);
+    throw error;
+  }
 }
 
 // Refresh client rules from Google Sheets
