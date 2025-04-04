@@ -901,6 +901,46 @@ export default function WeekView({
       return filtered;
     }
 
+    // First, we need to determine which meeting types are allowed for the selected client types
+    const allowedMeetingTypes = new Set<string>();
+
+    // If "all" is selected for client types, all meeting types are allowed
+    if (hasAllClientType) {
+      allowedMeetingTypes.add("טלפון");
+      allowedMeetingTypes.add("זום");
+      allowedMeetingTypes.add("פגישה");
+    } else {
+      // Otherwise, only include meeting types that are compatible with the selected client types
+      actualClientTypes.forEach((clientType) => {
+        // Import CLIENT_ALLOWED_MEETING_TYPES and use it here
+        // For now, hardcode the allowed meeting types
+        if (clientType === "0" || clientType === "new_customer") {
+          // לקוח חדש
+          allowedMeetingTypes.add("טלפון");
+          allowedMeetingTypes.add("זום");
+          allowedMeetingTypes.add("פגישה");
+        } else if (clientType === "1") {
+          // פולי אחים
+          allowedMeetingTypes.add("טלפון");
+          allowedMeetingTypes.add("פגישה");
+        } else if (clientType === "2") {
+          // מדריכים+
+          allowedMeetingTypes.add("טלפון");
+          allowedMeetingTypes.add("זום");
+        } else if (clientType === "3") {
+          // מכירת עוגות
+          allowedMeetingTypes.add("טלפון");
+          allowedMeetingTypes.add("פגישה");
+        }
+      });
+    }
+
+    console.log(
+      `[Debug] Allowed meeting types: ${Array.from(allowedMeetingTypes).join(
+        ","
+      )}`
+    );
+
     // Filter by meeting types if specific meeting types are selected
     if (!hasAllMeetingType) {
       console.log(
@@ -937,13 +977,32 @@ export default function WeekView({
       );
 
       filtered = filtered.filter((ts) => {
-        // If the slot is for "all" clients or matches any of the selected client types (OR logic)
-        return (
+        // First check if the timeslot is for the right client type
+        const clientTypeMatch =
           ts.clientType === "all" ||
           actualClientTypes.includes(ts.clientType) ||
           (Array.isArray(ts.clientType) &&
-            ts.clientType.some((ct) => actualClientTypes.includes(ct)))
+            ts.clientType.some((ct) => actualClientTypes.includes(ct)));
+
+        if (!clientTypeMatch) {
+          return false;
+        }
+
+        // Then check if any of the timeslot's meeting types are allowed for the selected client types
+        const meetingTypeList = ts.meetingTypes.split(",").map((t) => t.trim());
+        const hasAllowedMeetingType = meetingTypeList.some((type) =>
+          allowedMeetingTypes.has(type)
         );
+
+        if (!hasAllowedMeetingType) {
+          console.log(
+            `[Debug] Excluding timeslot - no compatible meeting types: ${
+              ts.meetingTypes
+            } not in [${Array.from(allowedMeetingTypes).join(",")}]`
+          );
+        }
+
+        return hasAllowedMeetingType;
       });
 
       console.log(
