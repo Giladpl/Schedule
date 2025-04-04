@@ -6,36 +6,51 @@ import React, { useMemo } from "react";
 
 // פונקציה ליצירת צבע עקבי מחרוזת (hash-based)
 export function stringToColor(str: string): string {
-  // רשימת צבעים בסיסיים בהירים עם ניגודיות טובה
+  // רשימת צבעים בסיסיים ברורים עם ניגודיות גבוהה
   const baseColors = [
-    "#4285F4", // כחול גוגל
-    "#EA4335", // אדום גוגל
-    "#FBBC05", // צהוב גוגל
-    "#34A853", // ירוק גוגל
-    "#8E24AA", // סגול
-    "#0097A7", // טורקיז
-    "#F57C00", // כתום
-    "#C2185B", // ורוד
-    "#7CB342", // ירוק בהיר
-    "#5E35B1", // סגול כהה
-    "#E53935", // אדום בהיר
-    "#43A047", // ירוק בינוני
-    "#1E88E5", // כחול בינוני
-    "#00ACC1", // טורקיז בהיר
-    "#039BE5", // כחול בהיר
-    "#E91E63", // ורוד בהיר
+    "#1a73e8", // כחול Google
+    "#ea4335", // אדום Google
+    "#34a853", // ירוק Google
+    "#fbbc04", // צהוב Google
+    "#9c27b0", // סגול עמוק
+    "#00bcd4", // ציאן
+    "#ff9800", // כתום
+    "#e91e63", // ורוד עמוק
+    "#3f51b5", // אינדיגו
+    "#4caf50", // ירוק בהיר
+    "#f44336", // אדום חזק
+    "#2196f3", // כחול בהיר
+    "#ff5722", // כתום עמוק
+    "#607d8b", // כחול-אפור
+    "#673ab7", // סגול
+    "#795548", // חום
+    "#009688", // טורקיז
+    "#8bc34a", // ירוק-ליים
+    "#ffc107", // ענבר
+    "#03a9f4", // כחול בהיר
   ];
 
-  // יצירת hash פשוט מהמחרוזת
+  // יצירת hash מהמחרוזת
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = (hash << 5) - hash + str.charCodeAt(i);
     hash |= 0; // המרה ל-32bit integer
   }
 
-  // בחירת צבע מהרשימה לפי ה-hash
-  const index = Math.abs(hash) % baseColors.length;
-  return baseColors[index];
+  // בחירת צבע מרשימת הצבעים הקבועה
+  if (Math.abs(hash) % 3 !== 0 || baseColors.length === 0) {
+    // שימוש בשיטת הצבעים הקבועים (2/3 מהמקרים)
+    const index = Math.abs(hash) % baseColors.length;
+    return baseColors[index];
+  } else {
+    // יצירת צבע אקראי עם ערכי בהירות וריווי גבוהים (1/3 מהמקרים)
+    // בפורמט HSL כדי להבטיח צבעים חיים וברורים
+    const hue = Math.abs(hash) % 360; // גוון אקראי מלא (0-359)
+    const saturation = 65 + (Math.abs(hash) % 20); // ריווי גבוה (65%-85%)
+    const lightness = 45 + (Math.abs(hash >> 8) % 10); // בהירות מאוזנת (45%-55%)
+
+    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+  }
 }
 
 // Map client types to colors - מינימלי ומרחיב באופן דינמי
