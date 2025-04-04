@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
+import plantLogo from "../../assets/plant-logo.png";
 
 interface CalendarHeaderProps {
   currentViewStart: Date;
@@ -44,7 +45,7 @@ export default function CalendarHeader({
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(
     null
   );
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
   const updateMenuPosition = () => {
@@ -52,7 +53,7 @@ export default function CalendarHeader({
       const rect = settingsButtonRef.current.getBoundingClientRect();
       setMenuPosition({
         top: rect.bottom + window.scrollY,
-        left: rect.right - 180 + window.scrollX, // Position menu to the left of button
+        right: window.innerWidth - rect.right,
       });
     }
   };
@@ -63,14 +64,21 @@ export default function CalendarHeader({
   };
 
   useEffect(() => {
-    // Create portal container
-    const div = document.createElement("div");
-    div.style.position = "absolute";
-    div.style.top = "0";
-    div.style.left = "0";
-    div.style.width = "100%";
-    document.body.appendChild(div);
-    setPortalContainer(div);
+    const portalDiv = document.createElement("div");
+    portalDiv.style.position = "absolute";
+    portalDiv.style.top = "0";
+    portalDiv.style.left = "0";
+    portalDiv.style.width = "100%";
+    document.body.appendChild(portalDiv);
+    setPortalContainer(portalDiv);
+
+    return () => {
+      document.body.removeChild(portalDiv);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!portalContainer) return;
 
     function handleClickOutside(event: MouseEvent) {
       if (
@@ -83,20 +91,21 @@ export default function CalendarHeader({
       }
     }
 
-    document.addEventListener("mousedown", handleClickOutside);
+    const handleResize = () => {
+      if (showSettings) {
+        updateMenuPosition();
+      }
+    };
 
-    // Handle window resize
-    const handleResize = () => updateMenuPosition();
+    document.addEventListener("mousedown", handleClickOutside);
     window.addEventListener("resize", handleResize);
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
       window.removeEventListener("resize", handleResize);
-      if (portalContainer) document.body.removeChild(portalContainer);
     };
-  }, [portalContainer]);
+  }, [portalContainer, showSettings]);
 
-  // Format the date range for display
   const formattedDate =
     currentView === "week"
       ? `${format(currentViewStart, "dd MMM", { locale: he })} - ${format(
@@ -106,71 +115,24 @@ export default function CalendarHeader({
         )}, ${format(currentViewStart, "yyyy")}`
       : format(currentViewStart, "MMMM yyyy", { locale: he });
 
-  // Toggle view between week and month
   const toggleView = () => {
     onViewChange(currentView === "week" ? "month" : "week");
   };
 
   return (
-    <header className="border-b border-[#dadce0] p-2 md:p-4 flex flex-col md:flex-row items-center justify-between sticky top-0 bg-white z-10">
-      <div className="flex items-center space-x-4 w-full md:w-auto justify-between md:justify-start">
-        <Button
-          onClick={onPrevious}
-          disabled={isPreviousDisabled}
-          variant="ghost"
-          size="icon"
-          aria-label="Previous"
-          className={cn(
-            "rounded-full h-10 w-10",
-            isPreviousDisabled && "opacity-50 cursor-not-allowed"
-          )}
-        >
-          <ChevronRight className="h-5 w-5" />
-        </Button>
-
-        <Button
-          onClick={onNext}
-          variant="ghost"
-          size="icon"
-          aria-label="Next"
-          className="rounded-full h-10 w-10"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </Button>
-
-        <span className="text-lg font-medium text-[#3c4043] hidden md:inline">
-          {formattedDate}
-        </span>
-
-        <Button
-          onClick={onToday}
-          variant="outline"
-          className="ml-2 h-9 bg-[#1a73e8] text-white hover:bg-[#1765cc] hover:text-white border-none"
-        >
-          היום
-        </Button>
-      </div>
-
-      <span className="text-lg font-medium text-[#3c4043] md:hidden mt-2">
-        {formattedDate}
-      </span>
-
-      <div className="flex items-center mt-4 md:mt-0">
-        <Button
-          onClick={toggleView}
-          variant="ghost"
-          className="h-9 text-[#3c4043] hover:bg-[#f1f3f4]"
-        >
-          {currentView === "week" ? "חודש" : "שבוע"}
-        </Button>
-
+    <header
+      className="border-b border-[#dadce0] p-2 md:p-4 flex items-center justify-between sticky top-0 bg-white z-10"
+      dir="rtl"
+    >
+      {/* Right side: Settings and view toggle */}
+      <div className="flex items-center order-1 justify-end">
         {isAdmin && (
-          <div className="relative">
+          <div className="relative ml-2">
             <Button
               onClick={toggleSettings}
               variant="ghost"
               size="icon"
-              className="rounded-full h-10 w-10 ml-2"
+              className="rounded-full h-10 w-10"
               ref={settingsButtonRef}
               aria-label="הגדרות"
             >
@@ -184,7 +146,7 @@ export default function CalendarHeader({
                   className="fixed z-[9999] bg-white shadow-lg rounded-md p-2 border border-gray-200"
                   style={{
                     top: `${menuPosition.top}px`,
-                    right: "24px", // Fixed right position
+                    right: `${menuPosition.right}px`,
                     width: "200px",
                   }}
                 >
@@ -197,7 +159,7 @@ export default function CalendarHeader({
                       variant="ghost"
                       className="w-full justify-start text-sm font-normal px-3 h-9 hover:bg-gray-100"
                     >
-                      <Gauge className="h-4 w-4 mr-2" />
+                      <Gauge className="h-4 w-4 ml-2" />
                       {currentViewMode === "admin"
                         ? "מעבר לתצוגת לקוחות"
                         : "מעבר לתצוגת אדמין"}
@@ -209,62 +171,122 @@ export default function CalendarHeader({
           </div>
         )}
 
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full h-10 w-10 ml-2 md:hidden"
-            >
-              <CalendarDays className="h-5 w-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="right" className="w-[300px] sm:w-[400px]">
-            <div className="py-4">
-              <div className="text-lg font-medium mb-4">הגדרות לוח שנה</div>
-              <div className="space-y-4">
-                <div>
-                  <Button
-                    onClick={() => {
-                      onViewChange("week");
-                      document
-                        .querySelector("[data-radix-collection-item]")
-                        ?.dispatchEvent(
-                          new KeyboardEvent("keydown", {
-                            key: "Escape",
-                            bubbles: true,
-                          })
-                        );
-                    }}
-                    variant={currentView === "week" ? "default" : "outline"}
-                    className="w-full"
-                  >
-                    תצוגת שבוע
-                  </Button>
-                </div>
-                <div>
-                  <Button
-                    onClick={() => {
-                      onViewChange("month");
-                      document
-                        .querySelector("[data-radix-collection-item]")
-                        ?.dispatchEvent(
-                          new KeyboardEvent("keydown", {
-                            key: "Escape",
-                            bubbles: true,
-                          })
-                        );
-                    }}
-                    variant={currentView === "month" ? "default" : "outline"}
-                    className="w-full"
-                  >
-                    תצוגת חודש
-                  </Button>
+        <Button
+          onClick={toggleView}
+          variant="outline"
+          className="h-9 text-[#3c4043] hover:bg-[#f1f3f4] border border-gray-300 rounded-md px-3 font-medium"
+        >
+          {currentView === "week" ? "מבט חודשי" : "מבט שבועי"}
+        </Button>
+      </div>
+
+      {/* Center: Date display and navigation */}
+      <div className="flex items-center justify-center order-2 space-x-2 space-x-reverse">
+        <div className="flex items-center">
+          <Button
+            onClick={onPrevious}
+            disabled={isPreviousDisabled}
+            variant="ghost"
+            size="icon"
+            aria-label="Previous"
+            className={cn(
+              "rounded-full h-10 w-10",
+              isPreviousDisabled && "opacity-50 cursor-not-allowed"
+            )}
+          >
+            <ChevronRight className="h-5 w-5" />
+          </Button>
+
+          <Button
+            onClick={onToday}
+            variant="outline"
+            className="mx-2 h-9 bg-[#1a73e8] text-white hover:bg-[#1765cc] hover:text-white border-none"
+          >
+            היום
+          </Button>
+
+          <Button
+            onClick={onNext}
+            variant="ghost"
+            size="icon"
+            aria-label="Next"
+            className="rounded-full h-10 w-10"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+        </div>
+
+        <span className="text-lg font-medium text-[#3c4043] mr-2">
+          {formattedDate}
+        </span>
+      </div>
+
+      {/* Left side: Logo and Mobile menu button */}
+      <div className="flex items-center order-3">
+        {/* Plant Logo SVG */}
+        <div className="h-10 w-10">
+          <img src={plantLogo} alt="Logo" className="h-full w-full" />
+        </div>
+
+        {/* Mobile menu button - only visible on mobile */}
+        <div className="md:hidden ml-2">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full h-10 w-10"
+              >
+                <CalendarDays className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-[300px] sm:w-[400px]">
+              <div className="py-4">
+                <div className="text-lg font-medium mb-4">הגדרות לוח שנה</div>
+                <div className="space-y-4">
+                  <div>
+                    <Button
+                      onClick={() => {
+                        onViewChange("week");
+                        document
+                          .querySelector("[data-radix-collection-item]")
+                          ?.dispatchEvent(
+                            new KeyboardEvent("keydown", {
+                              key: "Escape",
+                              bubbles: true,
+                            })
+                          );
+                      }}
+                      variant="ghost"
+                      className="w-full justify-start"
+                    >
+                      מבט שבועי
+                    </Button>
+                  </div>
+                  <div>
+                    <Button
+                      onClick={() => {
+                        onViewChange("month");
+                        document
+                          .querySelector("[data-radix-collection-item]")
+                          ?.dispatchEvent(
+                            new KeyboardEvent("keydown", {
+                              key: "Escape",
+                              bubbles: true,
+                            })
+                          );
+                      }}
+                      variant="ghost"
+                      className="w-full justify-start"
+                    >
+                      מבט חודשי
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-          </SheetContent>
-        </Sheet>
+            </SheetContent>
+          </Sheet>
+        </div>
       </div>
     </header>
   );
