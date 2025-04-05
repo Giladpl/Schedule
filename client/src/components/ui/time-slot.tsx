@@ -5,6 +5,87 @@ import { useQuery } from "@tanstack/react-query";
 import { Calendar, Clock, Phone, Users, Video } from "lucide-react";
 import React, { useMemo } from "react";
 
+// Global tooltip state accessible from all TimeSlot components
+type TooltipState = {
+  show: boolean;
+  content: React.ReactNode;
+  x: number;
+  y: number;
+};
+
+// Using a custom event to manage tooltip state globally
+const tooltipEvent = "timeslot-tooltip-change";
+const hideTooltipEvent = "timeslot-tooltip-hide";
+
+// Create tooltip event listeners
+const showGlobalTooltip = (state: TooltipState) => {
+  // First hide any existing tooltip
+  hideGlobalTooltip();
+
+  // Then dispatch the show event
+  const event = new CustomEvent(tooltipEvent, {
+    detail: state,
+  });
+  window.dispatchEvent(event);
+};
+
+const hideGlobalTooltip = () => {
+  const event = new CustomEvent(hideTooltipEvent);
+  window.dispatchEvent(event);
+};
+
+// Global tooltip component that will be mounted once at the top level
+export function GlobalTooltip() {
+  const [tooltip, setTooltip] = React.useState<TooltipState>({
+    show: false,
+    content: null,
+    x: 0,
+    y: 0,
+  });
+
+  React.useEffect(() => {
+    const handleShowTooltip = (e: Event) => {
+      const customEvent = e as CustomEvent<TooltipState>;
+      setTooltip(customEvent.detail);
+    };
+
+    const handleHideTooltip = () => {
+      setTooltip((prev) => ({ ...prev, show: false }));
+    };
+
+    // Add event listeners
+    window.addEventListener(tooltipEvent, handleShowTooltip);
+    window.addEventListener(hideTooltipEvent, handleHideTooltip);
+
+    // Also hide tooltip when scrolling or clicking
+    window.addEventListener("scroll", handleHideTooltip);
+    window.addEventListener("click", handleHideTooltip);
+
+    return () => {
+      // Clean up
+      window.removeEventListener(tooltipEvent, handleShowTooltip);
+      window.removeEventListener(hideTooltipEvent, handleHideTooltip);
+      window.removeEventListener("scroll", handleHideTooltip);
+      window.removeEventListener("click", handleHideTooltip);
+    };
+  }, []);
+
+  if (!tooltip.show) return null;
+
+  return (
+    <div
+      className="fixed pointer-events-none z-[9999]"
+      style={{
+        left: `${tooltip.x}px`,
+        top: `${tooltip.y}px`,
+        transform: "translateY(-100%)",
+      }}
+    >
+      {tooltip.content}
+    </div>
+  );
+}
+
 // פונקציה ליצירת צבע עקבי מחרוזת (hash-based)
 export function stringToColor(str: string): string {
   if (!str || typeof str !== "string") {
@@ -115,7 +196,6 @@ export function TimeSlot({
   const slotRef = React.useRef<HTMLDivElement>(null);
   const [isCompact, setIsCompact] = React.useState(false);
   const [isUltraCompact, setIsUltraCompact] = React.useState(false);
-  const [showTooltip, setShowTooltip] = React.useState(false);
   const isAdmin = viewMode === "admin";
 
   // Check height on mount and resize
@@ -192,19 +272,6 @@ export function TimeSlot({
         : `${remainingMinutes} דקות נותרו`
       : "";
 
-  // For client type ribbon tooltip - removing separate tooltip functionality
-  const [ribbonTooltip, setRibbonTooltip] = React.useState<{
-    show: boolean;
-    content: string;
-    x: number;
-    y: number;
-  }>({
-    show: false,
-    content: "",
-    x: 0,
-    y: 0,
-  });
-
   // Handle ribbon mouse events - simplified to just stop propagation
   const handleRibbonMouseEnter = (e: React.MouseEvent) => {
     // Just prevent bubbling to the parent container
@@ -226,19 +293,48 @@ export function TimeSlot({
   // Enhanced mouse event handlers with better cleanup
   const handleMouseEnter = (e: React.MouseEvent) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setTooltipPosition(getTooltipPosition(rect));
-    setShowTooltip(true);
+    const position = getTooltipPosition(rect);
+
+    // Create tooltip content
+    const tooltipContent = (
+      <div className="bg-black/90 text-white p-2 rounded-md text-xs shadow-lg max-w-[200px]">
+        {/* Hebrew style time format (end - start) */}
+        <div className="font-bold">
+          {formatTime(endTime)} - {formatTime(startTime)}
+        </div>
+        <div>{durationStr}</div>
+        {isAdmin && clientTypes.length > 0 && (
+          <div className="mt-1">
+            <span className="text-gray-300">Client:</span>{" "}
+            {clientTypes.map((type) => getClientTypeName(type)).join(", ")}
+          </div>
+        )}
+        <div className="mt-1">
+          <span className="text-gray-300">Meeting:</span>{" "}
+          {filteredMeetingTypes
+            .map((type) => MEETING_TYPE_STYLES[type]?.name || type)
+            .join(", ")}
+        </div>
+      </div>
+    );
+
+    // Show tooltip globally
+    showGlobalTooltip({
+      show: true,
+      content: tooltipContent,
+      x: position.x,
+      y: position.y,
+    });
   };
 
   const handleMouseLeave = () => {
-    setShowTooltip(false);
+    hideGlobalTooltip();
   };
 
   // Force tooltip to close when component unmounts
   React.useEffect(() => {
     return () => {
-      setShowTooltip(false);
-      setRibbonTooltip({ ...ribbonTooltip, show: false });
+      hideGlobalTooltip();
     };
   }, []);
 
@@ -363,9 +459,6 @@ export function TimeSlot({
     return meetingTypesList.filter((type) => allowedMeetingTypes.has(type));
   }, [meetingTypesList, activeClientTypes, hasAllClientType, clientData]);
 
-  // State for tooltip position
-  const [tooltipPosition, setTooltipPosition] = React.useState({ x: 0, y: 0 });
-
   // For ultra-compact view, determine the primary meeting type to show
   const primaryMeetingType = useMemo(() => {
     if (filteredMeetingTypes.length === 0) return null;
@@ -388,146 +481,17 @@ export function TimeSlot({
   // Special ultra-compact single-line layout for very small slots
   if (isUltraCompact) {
     return (
-      <>
-        <div
-          ref={slotRef}
-          className={cn(
-            "relative h-full w-full overflow-hidden rounded-lg border px-2 py-1 text-xs",
-            isAvailable
-              ? isEndingSoon
-                ? "border-orange-300 bg-orange-50" // Ending soon highlight
-                : "border-green-200 bg-green-50"
-              : "border-gray-200 bg-gray-50",
-            "hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors",
-            "flex items-center justify-between", // Changed to justify-between
-            className
-          )}
-          onClick={onClick}
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-          {...props}
-        >
-          {/* Client type ribbon - thinner for ultra-compact */}
-          <div className="absolute right-0 top-0 bottom-0 w-1.5">
-            {clientTypes.length === 0 ? (
-              <div
-                className="absolute inset-0"
-                style={{ backgroundColor: "#6366f1" }}
-                onMouseEnter={handleRibbonMouseEnter}
-                onMouseLeave={handleRibbonMouseLeave}
-              />
-            ) : (
-              clientTypes.map((type, index) => {
-                const color = CLIENT_TYPE_COLORS[type] || stringToColor(type);
-                const name = getClientTypeName(type);
-                const height =
-                  clientTypes.length > 1
-                    ? `${100 / clientTypes.length}%`
-                    : "100%";
-                const top =
-                  clientTypes.length > 1
-                    ? `${(index * 100) / clientTypes.length}%`
-                    : "0";
-
-                return (
-                  <div
-                    key={index}
-                    style={{
-                      position: "absolute",
-                      top,
-                      right: 0,
-                      height,
-                      width: "100%",
-                      backgroundColor: color,
-                    }}
-                    onMouseEnter={handleRibbonMouseEnter}
-                    onMouseLeave={handleRibbonMouseLeave}
-                  />
-                );
-              })
-            )}
-          </div>
-
-          {/* Left side - Meeting type icon */}
-          <div className="flex items-center justify-center z-10 ml-1">
-            {primaryMeetingType && (
-              <div
-                className="flex items-center justify-center rounded-full p-1"
-                style={{ backgroundColor: primaryMeetingStyle.color }}
-              >
-                {MEETING_TYPE_ICONS[primaryMeetingType] || (
-                  <Calendar size={10} className="text-white" />
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Right side - Time info */}
-          <div className="flex flex-col text-xs font-medium text-right pl-6 pr-3 z-10">
-            {/* Show time or remaining minutes based on whether timeslot is ending soon */}
-            {isEndingSoon ? (
-              <span className="text-orange-600 font-bold">
-                {remainingTimeStr}
-              </span>
-            ) : (
-              <span>
-                {formatTime(endTime)} - {formatTime(startTime)}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Custom tooltip */}
-        {showTooltip && (
-          <div
-            className="fixed pointer-events-none z-[9999]"
-            style={{
-              left: `${tooltipPosition.x}px`,
-              top: `${tooltipPosition.y}px`,
-              transform: "translateY(-100%)", // Move up by its own height
-            }}
-          >
-            <div className="bg-black/80 text-white p-2 rounded-md text-xs shadow-lg max-w-[200px]">
-              {/* Hebrew style time format (end - start) */}
-              <div className="font-bold">
-                {formatTime(endTime)} - {formatTime(startTime)}
-              </div>
-              <div>{durationStr}</div>
-              {isAdmin && clientTypes.length > 0 && (
-                <div className="mt-1">
-                  <span className="text-gray-300">Client:</span>{" "}
-                  {clientTypes
-                    .map((type) => getClientTypeName(type))
-                    .join(", ")}
-                </div>
-              )}
-              <div className="mt-1">
-                <span className="text-gray-300">Meeting:</span>{" "}
-                {filteredMeetingTypes
-                  .map((type) => MEETING_TYPE_STYLES[type]?.name || type)
-                  .join(", ")}
-              </div>
-            </div>
-          </div>
-        )}
-      </>
-    );
-  }
-
-  return (
-    <>
       <div
         ref={slotRef}
         className={cn(
-          "relative h-full w-full overflow-hidden rounded-lg border px-3 py-2 text-xs",
+          "relative h-full w-full overflow-hidden rounded-lg border px-2 py-1 text-xs",
           isAvailable
             ? isEndingSoon
               ? "border-orange-300 bg-orange-50" // Ending soon highlight
               : "border-green-200 bg-green-50"
             : "border-gray-200 bg-gray-50",
           "hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors",
-          "flex flex-col justify-between",
-          isCompact && "py-1 px-2", // Use smaller padding for compact mode
+          "flex items-center justify-between", // Changed to justify-between
           className
         )}
         onClick={onClick}
@@ -535,11 +499,11 @@ export function TimeSlot({
         onMouseLeave={handleMouseLeave}
         {...props}
       >
-        {/* Client type ribbons on right side */}
-        <div className="absolute right-0 top-0 bottom-0 w-3">
+        {/* Client type ribbon - thinner for ultra-compact */}
+        <div className="absolute right-0 top-0 bottom-0 w-1.5">
           {clientTypes.length === 0 ? (
             <div
-              className="absolute inset-0 client-type-ribbon"
+              className="absolute inset-0"
               style={{ backgroundColor: "#6366f1" }}
               onMouseEnter={handleRibbonMouseEnter}
               onMouseLeave={handleRibbonMouseLeave}
@@ -560,7 +524,6 @@ export function TimeSlot({
               return (
                 <div
                   key={index}
-                  className="client-type-ribbon"
                   style={{
                     position: "absolute",
                     top,
@@ -577,120 +540,177 @@ export function TimeSlot({
           )}
         </div>
 
-        {/* Time range and duration - centered in card */}
-        <div
-          className={cn(
-            "flex flex-col items-center justify-center text-center",
-            isCompact ? "my-0" : "my-4" // Adjust margin for compact mode
-          )}
-        >
-          <div className="flex items-center mb-1">
-            <Clock
-              size={isCompact ? 14 : 18}
-              className={cn(
-                "shrink-0",
-                isEndingSoon ? "text-orange-600" : "text-gray-600"
-              )}
-            />
-            <span
-              className={cn(
-                "font-bold mx-1",
-                isEndingSoon ? "text-orange-600" : "text-gray-800",
-                isCompact ? "text-xs" : "text-base mx-2.5" // Smaller text for compact mode
-              )}
+        {/* Left side - Meeting type icon */}
+        <div className="flex items-center justify-center z-10 ml-1">
+          {primaryMeetingType && (
+            <div
+              className="flex items-center justify-center rounded-full p-1"
+              style={{ backgroundColor: primaryMeetingStyle.color }}
             >
-              {/* Show time or remaining minutes based on whether timeslot is ending soon */}
-              {isEndingSoon
-                ? remainingTimeStr
-                : /* Hebrew style time format (end - start) */
-                  `${formatTime(endTime)} - ${formatTime(startTime)}`}
-            </span>
-          </div>
-          {!isCompact && (
-            <span
-              className={cn(
-                "text-xs",
-                isEndingSoon ? "text-orange-500 font-medium" : "text-gray-500"
+              {MEETING_TYPE_ICONS[primaryMeetingType] || (
+                <Calendar size={10} className="text-white" />
               )}
-            >
-              {isEndingSoon ? formatTime(endTime) : durationStr}
-            </span>
+            </div>
           )}
         </div>
 
-        {/* Meeting types as badges at bottom */}
-        {filteredMeetingTypes.length > 0 &&
-          filteredMeetingTypes[0] !== "all" && (
-            <div
-              className={cn(
-                "flex flex-wrap gap-1 justify-center",
-                isCompact ? "mt-0" : "mt-1 gap-2" // Adjust margin and gap for compact mode
-              )}
-            >
-              {filteredMeetingTypes.map((type, index) => {
-                const style =
-                  MEETING_TYPE_STYLES[type] || MEETING_TYPE_STYLES.default;
-                return (
-                  <div
-                    key={index}
-                    className={cn(
-                      "flex items-center rounded-full shadow-sm",
-                      isCompact ? "px-1.5 py-0.5" : "px-2 py-1 gap-x-1" // Smaller padding for compact mode
-                    )}
-                    style={{ backgroundColor: style.color }}
-                  >
-                    <span className="flex items-center justify-center">
-                      {MEETING_TYPE_ICONS[type] || (
-                        <Calendar
-                          size={isCompact ? 12 : 14}
-                          className="text-white"
-                        />
-                      )}
-                    </span>
-                    {/* Only show text in non-compact mode */}
-                    {!isCompact && (
-                      <span className="text-white font-medium text-[11px]">
-                        {style.name || type}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+        {/* Right side - Time info */}
+        <div className="flex flex-col text-xs font-medium text-right pl-6 pr-3 z-10">
+          {/* Show time or remaining minutes based on whether timeslot is ending soon */}
+          {isEndingSoon ? (
+            <span className="text-orange-600 font-bold">
+              {remainingTimeStr}
+            </span>
+          ) : (
+            <span>
+              {formatTime(endTime)} - {formatTime(startTime)}
+            </span>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={slotRef}
+      className={cn(
+        "relative h-full w-full overflow-hidden rounded-lg border px-3 py-2 text-xs",
+        isAvailable
+          ? isEndingSoon
+            ? "border-orange-300 bg-orange-50" // Ending soon highlight
+            : "border-green-200 bg-green-50"
+          : "border-gray-200 bg-gray-50",
+        "hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors",
+        "flex flex-col justify-between",
+        isCompact && "py-1 px-2", // Use smaller padding for compact mode
+        className
+      )}
+      onClick={onClick}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      {...props}
+    >
+      {/* Client type ribbons on right side */}
+      <div className="absolute right-0 top-0 bottom-0 w-3">
+        {clientTypes.length === 0 ? (
+          <div
+            className="absolute inset-0 client-type-ribbon"
+            style={{ backgroundColor: "#6366f1" }}
+            onMouseEnter={handleRibbonMouseEnter}
+            onMouseLeave={handleRibbonMouseLeave}
+          />
+        ) : (
+          clientTypes.map((type, index) => {
+            const color = CLIENT_TYPE_COLORS[type] || stringToColor(type);
+            const name = getClientTypeName(type);
+            const height =
+              clientTypes.length > 1 ? `${100 / clientTypes.length}%` : "100%";
+            const top =
+              clientTypes.length > 1
+                ? `${(index * 100) / clientTypes.length}%`
+                : "0";
+
+            return (
+              <div
+                key={index}
+                className="client-type-ribbon"
+                style={{
+                  position: "absolute",
+                  top,
+                  right: 0,
+                  height,
+                  width: "100%",
+                  backgroundColor: color,
+                }}
+                onMouseEnter={handleRibbonMouseEnter}
+                onMouseLeave={handleRibbonMouseLeave}
+              />
+            );
+          })
+        )}
       </div>
 
-      {/* Custom tooltip */}
-      {showTooltip && (
-        <div
-          className="fixed pointer-events-none z-[9999]"
-          style={{
-            left: `${tooltipPosition.x}px`,
-            top: `${tooltipPosition.y}px`,
-            transform: "translateY(-100%)",
-          }}
-        >
-          <div className="bg-black/80 text-white p-2 rounded-md text-xs shadow-lg max-w-[200px]">
-            {/* Hebrew style time format (end - start) */}
-            <div className="font-bold">
-              {formatTime(endTime)} - {formatTime(startTime)}
-            </div>
-            <div>{durationStr}</div>
-            {isAdmin && clientTypes.length > 0 && (
-              <div className="mt-1">
-                <span className="text-gray-300">Client:</span>{" "}
-                {clientTypes.map((type) => getClientTypeName(type)).join(", ")}
-              </div>
+      {/* Time range and duration - centered in card */}
+      <div
+        className={cn(
+          "flex flex-col items-center justify-center text-center",
+          isCompact ? "my-0" : "my-4" // Adjust margin for compact mode
+        )}
+      >
+        <div className="flex items-center mb-1">
+          <Clock
+            size={isCompact ? 14 : 18}
+            className={cn(
+              "shrink-0",
+              isEndingSoon ? "text-orange-600" : "text-gray-600"
             )}
-            <div className="mt-1">
-              <span className="text-gray-300">Meeting:</span>{" "}
-              {filteredMeetingTypes
-                .map((type) => MEETING_TYPE_STYLES[type]?.name || type)
-                .join(", ")}
-            </div>
-          </div>
+          />
+          <span
+            className={cn(
+              "font-bold mx-1",
+              isEndingSoon ? "text-orange-600" : "text-gray-800",
+              isCompact ? "text-xs" : "text-base mx-2.5" // Smaller text for compact mode
+            )}
+          >
+            {/* Show time or remaining minutes based on whether timeslot is ending soon */}
+            {isEndingSoon
+              ? remainingTimeStr
+              : /* Hebrew style time format (end - start) */
+                `${formatTime(endTime)} - ${formatTime(startTime)}`}
+          </span>
+        </div>
+        {!isCompact && (
+          <span
+            className={cn(
+              "text-xs",
+              isEndingSoon ? "text-orange-500 font-medium" : "text-gray-500"
+            )}
+          >
+            {isEndingSoon ? formatTime(endTime) : durationStr}
+          </span>
+        )}
+      </div>
+
+      {/* Meeting types as badges at bottom */}
+      {filteredMeetingTypes.length > 0 && filteredMeetingTypes[0] !== "all" && (
+        <div
+          className={cn(
+            "flex flex-wrap gap-1 justify-center",
+            isCompact ? "mt-0" : "mt-1 gap-2" // Adjust margin and gap for compact mode
+          )}
+        >
+          {filteredMeetingTypes.map((type, index) => {
+            const style =
+              MEETING_TYPE_STYLES[type] || MEETING_TYPE_STYLES.default;
+            return (
+              <div
+                key={index}
+                className={cn(
+                  "flex items-center rounded-full shadow-sm",
+                  isCompact ? "px-1.5 py-0.5" : "px-2 py-1 gap-x-1" // Smaller padding for compact mode
+                )}
+                style={{ backgroundColor: style.color }}
+              >
+                <span className="flex items-center justify-center">
+                  {MEETING_TYPE_ICONS[type] || (
+                    <Calendar
+                      size={isCompact ? 12 : 14}
+                      className="text-white"
+                    />
+                  )}
+                </span>
+                {/* Only show text in non-compact mode */}
+                {!isCompact && (
+                  <span className="text-white font-medium text-[11px]">
+                    {style.name || type}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
-    </>
+    </div>
   );
 }
