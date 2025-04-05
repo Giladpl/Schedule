@@ -1,17 +1,18 @@
 import { GlobalTooltip } from "@/components/ui/time-slot";
 import "@/styles/globals.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AppProps } from "next/app";
-import { Toaster } from "react-hot-toast";
 
 const queryClient = new QueryClient();
 
-export default function App({ Component, pageProps }: AppProps) {
+function App({ Component, pageProps }: any) {
+  console.log("App mounted with GlobalTooltip");
+
   return (
     <QueryClientProvider client={queryClient}>
       <Component {...pageProps} />
-      <Toaster />
       <GlobalTooltip />
     </QueryClientProvider>
   );
 }
+
+export default App;

@@ -22,11 +22,13 @@ const showGlobalTooltip = (state: TooltipState) => {
   // First hide any existing tooltip
   hideGlobalTooltip();
 
-  // Then dispatch the show event
-  const event = new CustomEvent(tooltipEvent, {
-    detail: state,
-  });
-  window.dispatchEvent(event);
+  // Then dispatch the show event with a small delay to ensure it works consistently
+  setTimeout(() => {
+    const event = new CustomEvent(tooltipEvent, {
+      detail: state,
+    });
+    window.dispatchEvent(event);
+  }, 10);
 };
 
 const hideGlobalTooltip = () => {
@@ -45,11 +47,13 @@ export function GlobalTooltip() {
 
   React.useEffect(() => {
     const handleShowTooltip = (e: Event) => {
+      console.log("Tooltip show event received");
       const customEvent = e as CustomEvent<TooltipState>;
       setTooltip(customEvent.detail);
     };
 
     const handleHideTooltip = () => {
+      console.log("Tooltip hide event received");
       setTooltip((prev) => ({ ...prev, show: false }));
     };
 
@@ -74,7 +78,7 @@ export function GlobalTooltip() {
 
   return (
     <div
-      className="fixed pointer-events-none z-[9999]"
+      className="fixed pointer-events-none z-[9999] bg-black/90 text-white p-2 rounded-md text-xs shadow-lg max-w-[200px]"
       style={{
         left: `${tooltip.x}px`,
         top: `${tooltip.y}px`,
@@ -292,12 +296,13 @@ export function TimeSlot({
 
   // Enhanced mouse event handlers with better cleanup
   const handleMouseEnter = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Stop propagation to prevent multiple handlers
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const position = getTooltipPosition(rect);
 
-    // Create tooltip content
+    // Create tooltip content - not wrapped in an extra div
     const tooltipContent = (
-      <div className="bg-black/90 text-white p-2 rounded-md text-xs shadow-lg max-w-[200px]">
+      <>
         {/* Hebrew style time format (end - start) */}
         <div className="font-bold">
           {formatTime(endTime)} - {formatTime(startTime)}
@@ -315,7 +320,7 @@ export function TimeSlot({
             .map((type) => MEETING_TYPE_STYLES[type]?.name || type)
             .join(", ")}
         </div>
-      </div>
+      </>
     );
 
     // Show tooltip globally
@@ -327,7 +332,8 @@ export function TimeSlot({
     });
   };
 
-  const handleMouseLeave = () => {
+  const handleMouseLeave = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Stop propagation to prevent multiple handlers
     hideGlobalTooltip();
   };
 
