@@ -306,7 +306,10 @@ export function TimeSlot({
 
     return (
       <div className="bg-black/80 text-white p-2 rounded-md text-xs shadow-lg z-50 max-w-[200px]">
-        <div className="font-bold">{timeRangeStr}</div>
+        {/* Hebrew style time format (end - start) */}
+        <div className="font-bold">
+          {formatTime(endTime)} - {formatTime(startTime)}
+        </div>
         <div>{durationStr}</div>
         {isAdmin && clientTypeNames && (
           <div className="mt-1">
@@ -318,7 +321,15 @@ export function TimeSlot({
         </div>
       </div>
     );
-  }, [timeRangeStr, durationStr, clientTypes, filteredMeetingTypes, isAdmin]);
+  }, [
+    formatTime,
+    endTime,
+    startTime,
+    durationStr,
+    clientTypes,
+    filteredMeetingTypes,
+    isAdmin,
+  ]);
 
   const [tooltipPosition, setTooltipPosition] = React.useState({ x: 0, y: 0 });
 
@@ -350,6 +361,48 @@ export function TimeSlot({
     ? MEETING_TYPE_STYLES[primaryMeetingType] || MEETING_TYPE_STYLES.default
     : MEETING_TYPE_STYLES.default;
 
+  // For client type ribbon tooltip
+  const [ribbonTooltip, setRibbonTooltip] = React.useState<{
+    show: boolean;
+    content: string;
+    x: number;
+    y: number;
+  }>({
+    show: false,
+    content: "",
+    x: 0,
+    y: 0,
+  });
+
+  // Handle ribbon mouse events
+  const handleRibbonMouseEnter = (
+    e: React.MouseEvent,
+    clientTypeName: string
+  ) => {
+    if (!isAdmin) return; // Only show in admin view
+
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setRibbonTooltip({
+      show: true,
+      content: clientTypeName,
+      x: rect.right + window.scrollX + 5,
+      y: rect.top + window.scrollY + rect.height / 2,
+    });
+
+    // Prevent parent tooltip from showing
+    e.stopPropagation();
+  };
+
+  const handleRibbonMouseLeave = (e: React.MouseEvent) => {
+    setRibbonTooltip({ ...ribbonTooltip, show: false });
+    e.stopPropagation();
+  };
+
+  // Format time for Hebrew style (end - start)
+  const hebrewStyleTimeRange = `${formatTime(endTime)} - ${formatTime(
+    startTime
+  )}`;
+
   // Special ultra-compact single-line layout for very small slots
   if (isUltraCompact) {
     return (
@@ -362,7 +415,7 @@ export function TimeSlot({
               ? "border-green-200 bg-green-50"
               : "border-gray-200 bg-gray-50",
             "hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors",
-            "flex items-center justify-center",
+            "flex items-center justify-between", // Changed to justify-between
             className
           )}
           onClick={onClick}
@@ -376,10 +429,17 @@ export function TimeSlot({
               <div
                 className="absolute inset-0"
                 style={{ backgroundColor: "#6366f1" }}
+                onMouseEnter={
+                  isAdmin
+                    ? (e) => handleRibbonMouseEnter(e, "כל הלקוחות")
+                    : undefined
+                }
+                onMouseLeave={isAdmin ? handleRibbonMouseLeave : undefined}
               />
             ) : (
               clientTypes.map((type, index) => {
                 const color = CLIENT_TYPE_COLORS[type] || stringToColor(type);
+                const name = getClientTypeName(type);
                 const height =
                   clientTypes.length > 1
                     ? `${100 / clientTypes.length}%`
@@ -400,14 +460,20 @@ export function TimeSlot({
                       width: "100%",
                       backgroundColor: color,
                     }}
+                    onMouseEnter={
+                      isAdmin
+                        ? (e) => handleRibbonMouseEnter(e, name)
+                        : undefined
+                    }
+                    onMouseLeave={isAdmin ? handleRibbonMouseLeave : undefined}
                   />
                 );
               })
             )}
           </div>
 
-          {/* Ultra-compact single line display with icon + short time */}
-          <div className="flex items-center justify-center w-full space-x-1 pl-1.5 pr-2">
+          {/* Left side - Meeting type icon */}
+          <div className="flex items-center justify-center z-10 ml-1">
             {primaryMeetingType && (
               <div
                 className="flex items-center justify-center rounded-full p-1"
@@ -418,10 +484,12 @@ export function TimeSlot({
                 )}
               </div>
             )}
-            <span className="text-xs font-medium truncate">
-              {formatTime(startTime)}
-            </span>
           </div>
+
+          {/* Right side - Time range in Hebrew style (end-start) */}
+          <span className="text-xs font-medium truncate text-right pl-6 pr-3 z-10">
+            {formatTime(endTime)} - {formatTime(startTime)}
+          </span>
         </div>
 
         {/* Custom tooltip */}
@@ -434,6 +502,20 @@ export function TimeSlot({
             }}
           >
             {tooltipContent}
+          </div>
+        )}
+
+        {/* Client type ribbon tooltip */}
+        {ribbonTooltip.show && (
+          <div
+            className="fixed pointer-events-none bg-black/80 text-white px-2 py-1 rounded-md text-xs shadow-lg z-50"
+            style={{
+              left: `${ribbonTooltip.x}px`,
+              top: `${ribbonTooltip.y}px`,
+              transform: "translateY(-50%)",
+            }}
+          >
+            {ribbonTooltip.content}
           </div>
         )}
       </>
@@ -465,7 +547,12 @@ export function TimeSlot({
             <div
               className="absolute inset-0 client-type-ribbon"
               style={{ backgroundColor: "#6366f1" }}
-              {...(isAdmin ? { "data-tooltip": "כל הלקוחות" } : {})}
+              onMouseEnter={
+                isAdmin
+                  ? (e) => handleRibbonMouseEnter(e, "כל הלקוחות")
+                  : undefined
+              }
+              onMouseLeave={isAdmin ? handleRibbonMouseLeave : undefined}
             />
           ) : (
             clientTypes.map((type, index) => {
@@ -492,7 +579,10 @@ export function TimeSlot({
                     width: "100%",
                     backgroundColor: color,
                   }}
-                  {...(isAdmin ? { "data-tooltip": name } : {})}
+                  onMouseEnter={
+                    isAdmin ? (e) => handleRibbonMouseEnter(e, name) : undefined
+                  }
+                  onMouseLeave={isAdmin ? handleRibbonMouseLeave : undefined}
                 />
               );
             })
@@ -517,7 +607,8 @@ export function TimeSlot({
                 isCompact ? "text-xs" : "text-base mx-2.5" // Smaller text for compact mode
               )}
             >
-              {timeRangeStr}
+              {/* Hebrew style time format (end - start) */}
+              {formatTime(endTime)} - {formatTime(startTime)}
             </span>
           </div>
           {!isCompact && (
@@ -577,6 +668,20 @@ export function TimeSlot({
           }}
         >
           {tooltipContent}
+        </div>
+      )}
+
+      {/* Client type ribbon tooltip */}
+      {ribbonTooltip.show && (
+        <div
+          className="fixed pointer-events-none bg-black/80 text-white px-2 py-1 rounded-md text-xs shadow-lg z-50"
+          style={{
+            left: `${ribbonTooltip.x}px`,
+            top: `${ribbonTooltip.y}px`,
+            transform: "translateY(-50%)",
+          }}
+        >
+          {ribbonTooltip.content}
         </div>
       )}
     </>
