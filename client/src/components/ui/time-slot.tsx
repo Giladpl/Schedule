@@ -109,6 +109,26 @@ export function TimeSlot({
     staleTime: 60000, // 1 minute
   });
 
+  // Store element ref to measure height
+  const slotRef = React.useRef<HTMLDivElement>(null);
+  const [isCompact, setIsCompact] = React.useState(false);
+
+  // Check height on mount and resize
+  React.useEffect(() => {
+    const checkHeight = () => {
+      if (slotRef.current) {
+        const height = slotRef.current.offsetHeight;
+        setIsCompact(height < 85); // Switch to compact mode if height is less than 85px
+      }
+    };
+
+    // Check height initially and on window resize
+    checkHeight();
+    window.addEventListener("resize", checkHeight);
+
+    return () => window.removeEventListener("resize", checkHeight);
+  }, []);
+
   // Check if "all" is included in client types or if the array is empty
   // Empty selection means "all"
   const hasAllClientType =
@@ -268,18 +288,35 @@ export function TimeSlot({
     return meetingTypesList.filter((type) => allowedMeetingTypes.has(type));
   }, [meetingTypesList, activeClientTypes, hasAllClientType, clientData]);
 
+  // Build tooltip content for the timeslot
+  const tooltipContent = useMemo(() => {
+    const clientTypeNames = clientTypes
+      .map((type) => getClientTypeName(type))
+      .join(", ");
+    const meetingTypeNames = filteredMeetingTypes
+      .map((type) => MEETING_TYPE_STYLES[type]?.name || type)
+      .join(", ");
+
+    return `${timeRangeStr} (${durationStr})
+${clientTypeNames ? `Client Type: ${clientTypeNames}` : ""}
+Meeting Types: ${meetingTypeNames}`;
+  }, [timeRangeStr, durationStr, clientTypes, filteredMeetingTypes]);
+
   return (
     <div
+      ref={slotRef}
       className={cn(
-        "relative h-full w-full overflow-hidden rounded-lg border px-3 py-2.5 text-xs",
+        "relative h-full w-full overflow-hidden rounded-lg border px-3 py-2 text-xs",
         isAvailable
           ? "border-green-200 bg-green-50"
           : "border-gray-200 bg-gray-50",
         "hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors",
         "flex flex-col justify-between",
+        isCompact && "py-1 px-2", // Use smaller padding for compact mode
         className
       )}
       onClick={onClick}
+      title={tooltipContent} // Add tooltip with complete information
       {...props}
     >
       {/* Client type ribbons on right side */}
@@ -321,37 +358,66 @@ export function TimeSlot({
       </div>
 
       {/* Time range and duration - centered in card */}
-      <div className="flex flex-col items-center justify-center my-4 text-center">
+      <div
+        className={cn(
+          "flex flex-col items-center justify-center text-center",
+          isCompact ? "my-0" : "my-4" // Adjust margin for compact mode
+        )}
+      >
         <div className="flex items-center mb-1">
-          <Clock size={18} className="text-gray-600 shrink-0" />
-          <span className="font-bold text-base mx-2.5 text-gray-800">
+          <Clock
+            size={isCompact ? 14 : 18}
+            className="text-gray-600 shrink-0"
+          />
+          <span
+            className={cn(
+              "font-bold mx-1 text-gray-800",
+              isCompact ? "text-xs" : "text-base mx-2.5" // Smaller text for compact mode
+            )}
+          >
             {timeRangeStr}
           </span>
         </div>
-        <span className="text-gray-500 text-xs">{durationStr}</span>
+        {!isCompact && (
+          <span className="text-gray-500 text-xs">{durationStr}</span>
+        )}
       </div>
 
       {/* Meeting types as badges at bottom */}
       {filteredMeetingTypes.length > 0 && filteredMeetingTypes[0] !== "all" && (
-        <div className="flex flex-wrap gap-2 justify-center mt-1">
+        <div
+          className={cn(
+            "flex flex-wrap gap-1 justify-center",
+            isCompact ? "mt-0" : "mt-1 gap-2" // Adjust margin and gap for compact mode
+          )}
+        >
           {filteredMeetingTypes.map((type, index) => {
             const style =
               MEETING_TYPE_STYLES[type] || MEETING_TYPE_STYLES.default;
             return (
               <div
                 key={index}
-                className="flex items-center px-2 py-1 rounded-full text-[11px] shadow-sm gap-x-1"
+                className={cn(
+                  "flex items-center rounded-full shadow-sm",
+                  isCompact ? "px-1.5 py-0.5" : "px-2 py-1 gap-x-1" // Smaller padding for compact mode
+                )}
                 style={{ backgroundColor: style.color }}
                 title={type}
               >
                 <span className="flex items-center justify-center">
                   {MEETING_TYPE_ICONS[type] || (
-                    <Calendar size={14} className="text-white" />
+                    <Calendar
+                      size={isCompact ? 12 : 14}
+                      className="text-white"
+                    />
                   )}
                 </span>
-                <span className="text-white font-medium">
-                  {style.name || type}
-                </span>
+                {/* Only show text in non-compact mode */}
+                {!isCompact && (
+                  <span className="text-white font-medium text-[11px]">
+                    {style.name || type}
+                  </span>
+                )}
               </div>
             );
           })}
