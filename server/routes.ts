@@ -208,28 +208,54 @@ export async function registerRoutes(app: Express): Promise<void> {
       );
 
       // For timeslots that have already started but not ended,
-      // adjust their start time to the next hour boundary from now
+      // adjust their start time to the next 15-minute boundary from now
       timeslots = timeslots.map((slot) => {
         const slotStartTime = new Date(slot.startTime);
+        const slotEndTime = new Date(slot.endTime);
 
         // If the slot has already started but not ended
         if (slotStartTime < now) {
-          // Calculate the next hour boundary
-          const nextHourBoundary = new Date(now);
-          // Round up to the next hour
-          nextHourBoundary.setHours(nextHourBoundary.getHours() + 1, 0, 0, 0);
+          // Calculate the next 15-minute boundary
+          const next15MinBoundary = new Date(now);
+          const minutes = next15MinBoundary.getMinutes();
+          const remainder = minutes % 15;
+
+          // Round up to the next 15-minute mark
+          next15MinBoundary.setMinutes(minutes + (15 - remainder), 0, 0);
+
+          // Calculate remaining time in minutes
+          const remainingTimeInMinutes =
+            (slotEndTime.getTime() - next15MinBoundary.getTime()) / (1000 * 60);
+
+          // Skip slots with less than 15 minutes remaining
+          if (remainingTimeInMinutes < 15) {
+            console.log(
+              `[Debug] Skipping timeslot (${
+                slot.id
+              }) with only ${remainingTimeInMinutes.toFixed(
+                1
+              )} minutes remaining`
+            );
+            // Mark as unavailable instead of returning null
+            return {
+              ...slot,
+              isAvailable: false, // Make it unavailable rather than filtering it out
+            };
+          }
 
           // Create a modified timeslot with adjusted start time
           // We need to maintain the same type for startTime
           const modifiedSlot = {
             ...slot,
-            startTime: nextHourBoundary,
+            startTime: next15MinBoundary,
           };
 
           console.log(
             `[Debug] Adjusted timeslot (${
               slot.id
-            }): Original start=${slotStartTime.toISOString()}, New start=${nextHourBoundary.toISOString()}`
+            }): Original start=${slotStartTime.toISOString()}, New start=${next15MinBoundary.toISOString()}, Remaining minutes: ${remainingTimeInMinutes.toFixed(
+              1
+            )}`
           );
 
           return modifiedSlot;
