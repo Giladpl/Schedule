@@ -4,91 +4,7 @@ import { Timeslot } from "@shared/schema";
 import { useQuery } from "@tanstack/react-query";
 import { Calendar, Clock, Phone, Users, Video } from "lucide-react";
 import React, { useMemo } from "react";
-
-// Global tooltip state accessible from all TimeSlot components
-type TooltipState = {
-  show: boolean;
-  content: React.ReactNode;
-  x: number;
-  y: number;
-};
-
-// Using a custom event to manage tooltip state globally
-const tooltipEvent = "timeslot-tooltip-change";
-const hideTooltipEvent = "timeslot-tooltip-hide";
-
-// Create tooltip event listeners
-const showGlobalTooltip = (state: TooltipState) => {
-  // First hide any existing tooltip
-  hideGlobalTooltip();
-
-  // Then dispatch the show event with a small delay to ensure it works consistently
-  setTimeout(() => {
-    const event = new CustomEvent(tooltipEvent, {
-      detail: state,
-    });
-    window.dispatchEvent(event);
-  }, 10);
-};
-
-const hideGlobalTooltip = () => {
-  const event = new CustomEvent(hideTooltipEvent);
-  window.dispatchEvent(event);
-};
-
-// Global tooltip component that will be mounted once at the top level
-export function GlobalTooltip() {
-  const [tooltip, setTooltip] = React.useState<TooltipState>({
-    show: false,
-    content: null,
-    x: 0,
-    y: 0,
-  });
-
-  React.useEffect(() => {
-    const handleShowTooltip = (e: Event) => {
-      console.log("Tooltip show event received");
-      const customEvent = e as CustomEvent<TooltipState>;
-      setTooltip(customEvent.detail);
-    };
-
-    const handleHideTooltip = () => {
-      console.log("Tooltip hide event received");
-      setTooltip((prev) => ({ ...prev, show: false }));
-    };
-
-    // Add event listeners
-    window.addEventListener(tooltipEvent, handleShowTooltip);
-    window.addEventListener(hideTooltipEvent, handleHideTooltip);
-
-    // Also hide tooltip when scrolling or clicking
-    window.addEventListener("scroll", handleHideTooltip);
-    window.addEventListener("click", handleHideTooltip);
-
-    return () => {
-      // Clean up
-      window.removeEventListener(tooltipEvent, handleShowTooltip);
-      window.removeEventListener(hideTooltipEvent, handleHideTooltip);
-      window.removeEventListener("scroll", handleHideTooltip);
-      window.removeEventListener("click", handleHideTooltip);
-    };
-  }, []);
-
-  if (!tooltip.show) return null;
-
-  return (
-    <div
-      className="fixed pointer-events-none z-[9999] bg-black/90 text-white p-2 rounded-md text-xs shadow-lg max-w-[200px]"
-      style={{
-        left: `${tooltip.x}px`,
-        top: `${tooltip.y}px`,
-        transform: "translateY(-100%)",
-      }}
-    >
-      {tooltip.content}
-    </div>
-  );
-}
+import { createPortal } from "react-dom";
 
 // פונקציה ליצירת צבע עקבי מחרוזת (hash-based)
 export function stringToColor(str: string): string {
@@ -189,6 +105,14 @@ export function TimeSlot({
   viewMode = "admin", // Default to admin view
   ...props
 }: TimeSlotProps) {
+  // Add state for tooltip visibility
+  const [showTooltip, setShowTooltip] = React.useState(false);
+  const [tooltipPosition, setTooltipPosition] = React.useState({
+    x: 0,
+    y: 0,
+    isBelow: false,
+  });
+
   // Fetch client data from the server
   const { data: clientData } = useQuery({
     queryKey: ["/api/client-data"],
@@ -219,6 +143,30 @@ export function TimeSlot({
     return () => window.removeEventListener("resize", checkHeight);
   }, []);
 
+  // Mouse handlers for tooltip
+  const handleMouseEnter = (e: React.MouseEvent) => {
+    const rect = slotRef.current?.getBoundingClientRect();
+    if (rect) {
+      // Calculate if there's enough space above, otherwise show below
+      const spaceAbove = rect.top > 150;
+
+      setTooltipPosition({
+        x: rect.left + rect.width / 2, // Center of the timeslot
+        y: spaceAbove ? rect.top : rect.bottom,
+        isBelow: !spaceAbove,
+      });
+      setShowTooltip(true);
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    // No longer update position on mouse move
+  };
+
+  const handleMouseLeave = () => {
+    setShowTooltip(false);
+  };
+
   // Check if "all" is included in client types or if the array is empty
   // Empty selection means "all"
   const hasAllClientType =
@@ -237,9 +185,6 @@ export function TimeSlot({
       hour12: false,
     });
   };
-
-  // Ensure start time comes before end time in display
-  const timeRangeStr = `${formatTime(startTime)} - ${formatTime(endTime)}`;
 
   // Calculate duration for display
   const durationMinutes = Math.round(
@@ -275,74 +220,6 @@ export function TimeSlot({
         ? "דקה אחרונה"
         : `${remainingMinutes} דקות נותרו`
       : "";
-
-  // Handle ribbon mouse events - simplified to just stop propagation
-  const handleRibbonMouseEnter = (e: React.MouseEvent) => {
-    // Just prevent bubbling to the parent container
-    e.stopPropagation();
-  };
-
-  const handleRibbonMouseLeave = (e: React.MouseEvent) => {
-    e.stopPropagation();
-  };
-
-  // Format the tooltip position to appear above the element instead of below
-  const getTooltipPosition = (rect: DOMRect) => {
-    return {
-      x: rect.left + window.scrollX + rect.width / 2 - 75, // Center the tooltip
-      y: rect.top + window.scrollY - 10, // Position above the element with a small gap
-    };
-  };
-
-  // Enhanced mouse event handlers with better cleanup
-  const handleMouseEnter = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Stop propagation to prevent multiple handlers
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const position = getTooltipPosition(rect);
-
-    // Create tooltip content - not wrapped in an extra div
-    const tooltipContent = (
-      <>
-        {/* Hebrew style time format (end - start) */}
-        <div className="font-bold">
-          {formatTime(endTime)} - {formatTime(startTime)}
-        </div>
-        <div>{durationStr}</div>
-        {isAdmin && clientTypes.length > 0 && (
-          <div className="mt-1">
-            <span className="text-gray-300">Client:</span>{" "}
-            {clientTypes.map((type) => getClientTypeName(type)).join(", ")}
-          </div>
-        )}
-        <div className="mt-1">
-          <span className="text-gray-300">Meeting:</span>{" "}
-          {filteredMeetingTypes
-            .map((type) => MEETING_TYPE_STYLES[type]?.name || type)
-            .join(", ")}
-        </div>
-      </>
-    );
-
-    // Show tooltip globally
-    showGlobalTooltip({
-      show: true,
-      content: tooltipContent,
-      x: position.x,
-      y: position.y,
-    });
-  };
-
-  const handleMouseLeave = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Stop propagation to prevent multiple handlers
-    hideGlobalTooltip();
-  };
-
-  // Force tooltip to close when component unmounts
-  React.useEffect(() => {
-    return () => {
-      hideGlobalTooltip();
-    };
-  }, []);
 
   // Parse meeting types
   const meetingTypesList = timeslot.meetingTypes
@@ -479,45 +356,270 @@ export function TimeSlot({
     ? MEETING_TYPE_STYLES[primaryMeetingType] || MEETING_TYPE_STYLES.default
     : MEETING_TYPE_STYLES.default;
 
-  // Format time for Hebrew style (end - start)
-  const hebrewStyleTimeRange = `${formatTime(endTime)} - ${formatTime(
-    startTime
-  )}`;
+  // Create tooltip content with RTL support
+  const tooltipContent = (
+    <div className="flex flex-col gap-3 p-0" dir="rtl">
+      {/* Time and duration */}
+      <div className="text-right flex items-start w-full">
+        <div className="pr-1 pl-3 pt-0.5">
+          <Clock size={18} className="text-blue-400 shrink-0" />
+        </div>
+        <div className="flex-1 font-bold leading-tight">
+          {formatTime(startTime)} - {formatTime(endTime)}
+          <div className="text-gray-300 text-xs font-normal mt-1">
+            {durationStr}
+          </div>
+        </div>
+      </div>
+
+      {/* Client Types */}
+      {isAdmin && (
+        <div className="text-right flex items-start w-full mt-2">
+          <div className="pr-1 pl-3 pt-0.5">
+            <Users size={18} className="text-blue-400 shrink-0" />
+          </div>
+          <div className="flex-1 font-bold leading-tight">
+            {clientTypes.length > 0
+              ? clientTypes.map((type) => getClientTypeName(type)).join(", ")
+              : "כל הלקוחות"}
+          </div>
+        </div>
+      )}
+
+      {/* Meeting Types */}
+      {filteredMeetingTypes.length > 0 && (
+        <div className="text-right flex items-start w-full mt-2">
+          <div className="pr-1 pl-3 pt-0.5">
+            <Calendar size={18} className="text-blue-400 shrink-0" />
+          </div>
+          <div className="flex-1 font-bold leading-tight">
+            {filteredMeetingTypes
+              .map((type) => MEETING_TYPE_STYLES[type]?.name || type)
+              .join(", ")}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // Calculate tooltip position relative to viewport
+  const getTooltipPosition = () => {
+    const rect = slotRef.current?.getBoundingClientRect();
+    if (!rect) return {};
+
+    // Position tooltip based on available space
+    if (tooltipPosition.isBelow) {
+      // Position below the slot, centered horizontally with the slot
+      return {
+        left: rect.left + rect.width / 2,
+        top: tooltipPosition.y + 10,
+        transform: "translateX(-50%)",
+      };
+    } else {
+      // Position above the slot, centered horizontally with the slot
+      return {
+        left: rect.left + rect.width / 2,
+        top: tooltipPosition.y - 10,
+        transform: "translateX(-50%) translateY(-100%)",
+      };
+    }
+  };
+
+  // Calculate tooltip arrow position and style
+  const getTooltipArrowStyle = () => {
+    if (tooltipPosition.isBelow) {
+      // Arrow pointing up
+      return {
+        position: "absolute" as const,
+        left: "50%",
+        top: "-6px",
+        transform: "translateX(-50%)",
+        width: 0,
+        height: 0,
+        borderLeft: "6px solid transparent",
+        borderRight: "6px solid transparent",
+        borderBottom: "6px solid #111827",
+      };
+    } else {
+      // Arrow pointing down
+      return {
+        position: "absolute" as const,
+        left: "50%",
+        bottom: "-6px",
+        transform: "translateX(-50%)",
+        width: 0,
+        height: 0,
+        borderLeft: "6px solid transparent",
+        borderRight: "6px solid transparent",
+        borderTop: "6px solid #111827",
+      };
+    }
+  };
 
   // Special ultra-compact single-line layout for very small slots
   if (isUltraCompact) {
     return (
+      <>
+        {showTooltip &&
+          createPortal(
+            <div
+              dir="rtl"
+              className="fixed z-[99999] bg-[#111827] text-white rounded-md text-xs shadow-lg pointer-events-none
+                      border border-gray-700 transition-all duration-200 pr-3 pl-4 py-4"
+              style={{
+                ...getTooltipPosition(),
+                minWidth: "220px",
+                maxWidth: "280px",
+                opacity: 1,
+                animationName: "fadeIn",
+                animationDuration: "0.2s",
+              }}
+            >
+              {tooltipContent}
+              <div style={getTooltipArrowStyle()} />
+            </div>,
+            document.body
+          )}
+        <div
+          ref={slotRef}
+          className={cn(
+            "relative h-full w-full overflow-hidden rounded-lg border px-2 py-1 text-xs",
+            isAvailable
+              ? isEndingSoon
+                ? "border-orange-300 bg-orange-50" // Ending soon highlight
+                : "border-green-200 bg-green-50"
+              : "border-gray-200 bg-gray-50",
+            "hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors",
+            "flex items-center justify-center", // Changed to center content
+            className
+          )}
+          onClick={onClick}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          dir="rtl"
+          {...props}
+        >
+          {/* Client type ribbon - thinner for ultra-compact */}
+          <div className="absolute right-0 top-0 bottom-0 w-1.5 pointer-events-none">
+            {clientTypes.length === 0 ? (
+              <div
+                className="absolute inset-0"
+                style={{ backgroundColor: "#6366f1" }}
+              />
+            ) : (
+              clientTypes.map((type, index) => {
+                const color = CLIENT_TYPE_COLORS[type] || stringToColor(type);
+                const height =
+                  clientTypes.length > 1
+                    ? `${100 / clientTypes.length}%`
+                    : "100%";
+                const top =
+                  clientTypes.length > 1
+                    ? `${(index * 100) / clientTypes.length}%`
+                    : "0";
+
+                return (
+                  <div
+                    key={index}
+                    style={{
+                      position: "absolute",
+                      top,
+                      right: 0,
+                      height,
+                      width: "100%",
+                      backgroundColor: color,
+                    }}
+                  />
+                );
+              })
+            )}
+          </div>
+
+          {/* Time info */}
+          <div className="flex flex-col items-center justify-center z-10 px-5">
+            {/* Show time or remaining minutes based on whether timeslot is ending soon */}
+            {isEndingSoon ? (
+              <span className="text-orange-600 font-bold">
+                {remainingTimeStr}
+              </span>
+            ) : (
+              <span>
+                {formatTime(endTime)} - {formatTime(startTime)}
+              </span>
+            )}
+            <span className="text-gray-500 text-[10px]">{durationStr}</span>
+          </div>
+
+          {/* Meeting type icon */}
+          {primaryMeetingType && (
+            <div className="flex items-center justify-center z-10">
+              <div
+                className="flex items-center justify-center rounded-full p-1"
+                style={{ backgroundColor: primaryMeetingStyle.color }}
+              >
+                {MEETING_TYPE_ICONS[primaryMeetingType] || (
+                  <Calendar size={10} className="text-white" />
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {showTooltip &&
+        createPortal(
+          <div
+            dir="rtl"
+            className="fixed z-[99999] bg-[#111827] text-white rounded-md text-xs shadow-lg pointer-events-none
+                    border border-gray-700 transition-all duration-200 px-5 py-4"
+            style={{
+              ...getTooltipPosition(),
+              minWidth: "220px",
+              maxWidth: "280px",
+              opacity: 1,
+              animationName: "fadeIn",
+              animationDuration: "0.2s",
+            }}
+          >
+            {tooltipContent}
+            <div style={getTooltipArrowStyle()} />
+          </div>,
+          document.body
+        )}
       <div
         ref={slotRef}
         className={cn(
-          "relative h-full w-full overflow-hidden rounded-lg border px-2 py-1 text-xs",
+          "relative h-full w-full overflow-hidden rounded-lg border px-3 py-2 text-xs",
           isAvailable
             ? isEndingSoon
               ? "border-orange-300 bg-orange-50" // Ending soon highlight
               : "border-green-200 bg-green-50"
             : "border-gray-200 bg-gray-50",
           "hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors",
-          "flex items-center justify-between", // Changed to justify-between
+          "flex flex-col items-center", // Changed to center items
+          isCompact && "py-1 px-2", // Use smaller padding for compact mode
           className
         )}
         onClick={onClick}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        dir="rtl"
         {...props}
       >
-        {/* Client type ribbon - thinner for ultra-compact */}
-        <div className="absolute right-0 top-0 bottom-0 w-1.5">
+        {/* Client type ribbons on right side */}
+        <div className="absolute right-0 top-0 bottom-0 w-3 pointer-events-none">
           {clientTypes.length === 0 ? (
             <div
-              className="absolute inset-0"
+              className="absolute inset-0 pointer-events-none"
               style={{ backgroundColor: "#6366f1" }}
-              onMouseEnter={handleRibbonMouseEnter}
-              onMouseLeave={handleRibbonMouseLeave}
             />
           ) : (
             clientTypes.map((type, index) => {
               const color = CLIENT_TYPE_COLORS[type] || stringToColor(type);
-              const name = getClientTypeName(type);
               const height =
                 clientTypes.length > 1
                   ? `${100 / clientTypes.length}%`
@@ -530,6 +632,7 @@ export function TimeSlot({
               return (
                 <div
                   key={index}
+                  className="pointer-events-none"
                   style={{
                     position: "absolute",
                     top,
@@ -538,185 +641,94 @@ export function TimeSlot({
                     width: "100%",
                     backgroundColor: color,
                   }}
-                  onMouseEnter={handleRibbonMouseEnter}
-                  onMouseLeave={handleRibbonMouseLeave}
                 />
               );
             })
           )}
         </div>
 
-        {/* Left side - Meeting type icon */}
-        <div className="flex items-center justify-center z-10 ml-1">
-          {primaryMeetingType && (
-            <div
-              className="flex items-center justify-center rounded-full p-1"
-              style={{ backgroundColor: primaryMeetingStyle.color }}
-            >
-              {MEETING_TYPE_ICONS[primaryMeetingType] || (
-                <Calendar size={10} className="text-white" />
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Right side - Time info */}
-        <div className="flex flex-col text-xs font-medium text-right pl-6 pr-3 z-10">
-          {/* Show time or remaining minutes based on whether timeslot is ending soon */}
-          {isEndingSoon ? (
-            <span className="text-orange-600 font-bold">
-              {remainingTimeStr}
-            </span>
-          ) : (
-            <span>
-              {formatTime(endTime)} - {formatTime(startTime)}
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      ref={slotRef}
-      className={cn(
-        "relative h-full w-full overflow-hidden rounded-lg border px-3 py-2 text-xs",
-        isAvailable
-          ? isEndingSoon
-            ? "border-orange-300 bg-orange-50" // Ending soon highlight
-            : "border-green-200 bg-green-50"
-          : "border-gray-200 bg-gray-50",
-        "hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors",
-        "flex flex-col justify-between",
-        isCompact && "py-1 px-2", // Use smaller padding for compact mode
-        className
-      )}
-      onClick={onClick}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      {...props}
-    >
-      {/* Client type ribbons on right side */}
-      <div className="absolute right-0 top-0 bottom-0 w-3">
-        {clientTypes.length === 0 ? (
-          <div
-            className="absolute inset-0 client-type-ribbon"
-            style={{ backgroundColor: "#6366f1" }}
-            onMouseEnter={handleRibbonMouseEnter}
-            onMouseLeave={handleRibbonMouseLeave}
-          />
-        ) : (
-          clientTypes.map((type, index) => {
-            const color = CLIENT_TYPE_COLORS[type] || stringToColor(type);
-            const name = getClientTypeName(type);
-            const height =
-              clientTypes.length > 1 ? `${100 / clientTypes.length}%` : "100%";
-            const top =
-              clientTypes.length > 1
-                ? `${(index * 100) / clientTypes.length}%`
-                : "0";
-
-            return (
-              <div
-                key={index}
-                className="client-type-ribbon"
-                style={{
-                  position: "absolute",
-                  top,
-                  right: 0,
-                  height,
-                  width: "100%",
-                  backgroundColor: color,
-                }}
-                onMouseEnter={handleRibbonMouseEnter}
-                onMouseLeave={handleRibbonMouseLeave}
-              />
-            );
-          })
-        )}
-      </div>
-
-      {/* Time range and duration - centered in card */}
-      <div
-        className={cn(
-          "flex flex-col items-center justify-center text-center",
-          isCompact ? "my-0" : "my-4" // Adjust margin for compact mode
-        )}
-      >
-        <div className="flex items-center mb-1">
-          <Clock
-            size={isCompact ? 14 : 18}
-            className={cn(
-              "shrink-0",
-              isEndingSoon ? "text-orange-600" : "text-gray-600"
-            )}
-          />
-          <span
-            className={cn(
-              "font-bold mx-1",
-              isEndingSoon ? "text-orange-600" : "text-gray-800",
-              isCompact ? "text-xs" : "text-base mx-2.5" // Smaller text for compact mode
-            )}
-          >
-            {/* Show time or remaining minutes based on whether timeslot is ending soon */}
-            {isEndingSoon
-              ? remainingTimeStr
-              : /* Hebrew style time format (end - start) */
-                `${formatTime(endTime)} - ${formatTime(startTime)}`}
-          </span>
-        </div>
-        {!isCompact && (
-          <span
-            className={cn(
-              "text-xs",
-              isEndingSoon ? "text-orange-500 font-medium" : "text-gray-500"
-            )}
-          >
-            {isEndingSoon ? formatTime(endTime) : durationStr}
-          </span>
-        )}
-      </div>
-
-      {/* Meeting types as badges at bottom */}
-      {filteredMeetingTypes.length > 0 && filteredMeetingTypes[0] !== "all" && (
+        {/* Time range and duration - centered */}
         <div
           className={cn(
-            "flex flex-wrap gap-1 justify-center",
-            isCompact ? "mt-0" : "mt-1 gap-2" // Adjust margin and gap for compact mode
+            "flex flex-col items-center justify-center text-center w-full", // Changed to center-aligned
+            isCompact ? "my-0" : "my-4" // Adjust margin for compact mode
           )}
         >
-          {filteredMeetingTypes.map((type, index) => {
-            const style =
-              MEETING_TYPE_STYLES[type] || MEETING_TYPE_STYLES.default;
-            return (
-              <div
-                key={index}
-                className={cn(
-                  "flex items-center rounded-full shadow-sm",
-                  isCompact ? "px-1.5 py-0.5" : "px-2 py-1 gap-x-1" // Smaller padding for compact mode
-                )}
-                style={{ backgroundColor: style.color }}
-              >
-                <span className="flex items-center justify-center">
-                  {MEETING_TYPE_ICONS[type] || (
-                    <Calendar
-                      size={isCompact ? 12 : 14}
-                      className="text-white"
-                    />
-                  )}
-                </span>
-                {/* Only show text in non-compact mode */}
-                {!isCompact && (
-                  <span className="text-white font-medium text-[11px]">
-                    {style.name || type}
-                  </span>
-                )}
-              </div>
-            );
-          })}
+          <div className="flex items-center mb-1 justify-center">
+            <span
+              className={cn(
+                "font-bold ml-1", // Changed margin left for Hebrew
+                isEndingSoon ? "text-orange-600" : "text-gray-800",
+                isCompact ? "text-xs" : "text-base" // Smaller text for compact mode
+              )}
+            >
+              {/* Show time or remaining minutes based on whether timeslot is ending soon */}
+              {isEndingSoon
+                ? remainingTimeStr
+                : /* Hebrew style time format (end - start) */
+                  `${formatTime(endTime)} - ${formatTime(startTime)}`}
+            </span>
+            <Clock
+              size={isCompact ? 14 : 18}
+              className={cn(
+                "shrink-0",
+                isEndingSoon ? "text-orange-600" : "text-gray-600"
+              )}
+            />
+          </div>
+          {!isCompact && (
+            <span
+              className={cn(
+                "text-xs",
+                isEndingSoon ? "text-orange-500 font-medium" : "text-gray-500"
+              )}
+            >
+              {isEndingSoon ? formatTime(endTime) : durationStr}
+            </span>
+          )}
         </div>
-      )}
-    </div>
+
+        {/* Meeting types as badges at bottom - centered */}
+        {filteredMeetingTypes.length > 0 &&
+          filteredMeetingTypes[0] !== "all" && (
+            <div
+              className={cn(
+                "flex flex-wrap gap-1 justify-center w-full", // Changed to center-aligned
+                isCompact ? "mt-0" : "mt-1 gap-2" // Adjust margin and gap for compact mode
+              )}
+            >
+              {filteredMeetingTypes.map((type, index) => {
+                const style =
+                  MEETING_TYPE_STYLES[type] || MEETING_TYPE_STYLES.default;
+                return (
+                  <div
+                    key={index}
+                    className={cn(
+                      "flex items-center rounded-full shadow-sm",
+                      isCompact ? "px-1.5 py-0.5" : "px-2 py-1 gap-x-1" // Smaller padding for compact mode
+                    )}
+                    style={{ backgroundColor: style.color }}
+                  >
+                    {/* Only show text in non-compact mode */}
+                    {!isCompact && (
+                      <span className="text-white font-medium text-[11px]">
+                        {style.name || type}
+                      </span>
+                    )}
+                    <span className="flex items-center justify-center">
+                      {MEETING_TYPE_ICONS[type] || (
+                        <Calendar
+                          size={isCompact ? 12 : 14}
+                          className="text-white"
+                        />
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+      </div>
+    </>
   );
 }
