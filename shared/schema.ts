@@ -94,7 +94,19 @@ export const insertTimeslotSchema = createInsertSchema(timeslots).omit({
 });
 
 export type InsertTimeslot = z.infer<typeof insertTimeslotSchema>;
-export type Timeslot = typeof timeslots.$inferSelect;
+export type Timeslot = {
+  id: number;
+  startTime: Date;
+  endTime: Date;
+  clientType: string;
+  meetingTypes: string;
+  isAvailable: boolean;
+  googleEventId: string | null;
+  parentEventId: string | null;
+  // Add new properties for adjusted timeslots
+  wasAdjusted?: boolean;
+  remainingMinutes?: number;
+};
 
 // Enhanced bookings schema
 export const bookings = pgTable("bookings", {

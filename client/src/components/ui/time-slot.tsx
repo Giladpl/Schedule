@@ -134,14 +134,18 @@ export function TimeSlot({
   const durationMinutes = Math.round(
     (endTime.getTime() - startTime.getTime()) / (1000 * 60)
   );
+
+  // Show exact remaining minutes if the timeslot was adjusted
+  const displayDuration = timeslot.remainingMinutes || durationMinutes;
+
   const durationStr =
-    durationMinutes >= 60 * 12
+    displayDuration >= 60 * 12
       ? "Full Day Availability"
-      : durationMinutes >= 60
-      ? `${Math.floor(durationMinutes / 60)}h ${
-          durationMinutes % 60 > 0 ? `${durationMinutes % 60}m` : ""
+      : displayDuration >= 60
+      ? `${Math.floor(displayDuration / 60)}h ${
+          displayDuration % 60 > 0 ? `${displayDuration % 60}m` : ""
         }`
-      : `${durationMinutes}m`;
+      : `${displayDuration}m`;
 
   // Parse meeting types
   const meetingTypesList = timeslot.meetingTypes

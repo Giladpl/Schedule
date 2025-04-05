@@ -227,8 +227,9 @@ export async function registerRoutes(app: Express): Promise<void> {
           const remainingTimeInMinutes =
             (slotEndTime.getTime() - next15MinBoundary.getTime()) / (1000 * 60);
 
-          // Skip slots with less than 15 minutes remaining
-          if (remainingTimeInMinutes < 15) {
+          // Use a smaller minimum duration (5 minutes instead of 15)
+          // This allows for shorter appointment types
+          if (remainingTimeInMinutes < 5) {
             console.log(
               `[Debug] Skipping timeslot (${
                 slot.id
@@ -243,11 +244,30 @@ export async function registerRoutes(app: Express): Promise<void> {
             };
           }
 
+          // Make sure end time is after start time in all cases
+          if (next15MinBoundary >= slotEndTime) {
+            console.log(
+              `[Debug] Adjusting end time for timeslot (${
+                slot.id
+              }) because rounded start (${next15MinBoundary.toISOString()}) would be >= end (${slotEndTime.toISOString()})`
+            );
+
+            // If rounded start would be after or equal to end time,
+            // keep original start time but mark the remaining time
+            return {
+              ...slot,
+              remainingMinutes: remainingTimeInMinutes,
+            };
+          }
+
           // Create a modified timeslot with adjusted start time
           // We need to maintain the same type for startTime
           const modifiedSlot = {
             ...slot,
             startTime: next15MinBoundary,
+            // Keep track of adjusted status and original meeting types to ensure proper rendering
+            wasAdjusted: true,
+            remainingMinutes: remainingTimeInMinutes,
           };
 
           console.log(
