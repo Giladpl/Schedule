@@ -181,6 +181,32 @@ export async function registerRoutes(app: Express): Promise<void> {
         );
       }
 
+      // Filter to include timeslots that are currently active (end time is in future)
+      // This ensures that slots that have already started but haven't ended yet are included
+      const now = new Date();
+      console.log(`[Debug] Current time: ${now.toISOString()}`);
+
+      timeslots = timeslots.filter((slot) => {
+        const slotEndTime = new Date(slot.endTime);
+        const isActive = slotEndTime > now;
+
+        // For debugging
+        if (new Date(slot.startTime).getDay() === 6) {
+          // Saturday
+          console.log(
+            `[Debug] Saturday slot (${slot.id}): Start=${new Date(
+              slot.startTime
+            ).toISOString()}, End=${slotEndTime.toISOString()}, IsActive=${isActive}`
+          );
+        }
+
+        return isActive;
+      });
+
+      console.log(
+        `[Debug] After current time filtering: ${timeslots.length} timeslots remaining`
+      );
+
       // Return filtered timeslots
       return res.json(timeslots);
     } catch (error) {
