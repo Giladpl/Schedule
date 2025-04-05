@@ -192,6 +192,29 @@ export function TimeSlot({
         : `${remainingMinutes} דקות נותרו`
       : "";
 
+  // For client type ribbon tooltip - removing separate tooltip functionality
+  const [ribbonTooltip, setRibbonTooltip] = React.useState<{
+    show: boolean;
+    content: string;
+    x: number;
+    y: number;
+  }>({
+    show: false,
+    content: "",
+    x: 0,
+    y: 0,
+  });
+
+  // Handle ribbon mouse events - simplified to just stop propagation
+  const handleRibbonMouseEnter = (e: React.MouseEvent) => {
+    // Just prevent bubbling to the parent container
+    e.stopPropagation();
+  };
+
+  const handleRibbonMouseLeave = (e: React.MouseEvent) => {
+    e.stopPropagation();
+  };
+
   // Format the tooltip position to appear above the element instead of below
   const getTooltipPosition = (rect: DOMRect) => {
     return {
@@ -199,6 +222,25 @@ export function TimeSlot({
       y: rect.top + window.scrollY - 10, // Position above the element with a small gap
     };
   };
+
+  // Enhanced mouse event handlers with better cleanup
+  const handleMouseEnter = (e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setTooltipPosition(getTooltipPosition(rect));
+    setShowTooltip(true);
+  };
+
+  const handleMouseLeave = () => {
+    setShowTooltip(false);
+  };
+
+  // Force tooltip to close when component unmounts
+  React.useEffect(() => {
+    return () => {
+      setShowTooltip(false);
+      setRibbonTooltip({ ...ribbonTooltip, show: false });
+    };
+  }, []);
 
   // Parse meeting types
   const meetingTypesList = timeslot.meetingTypes
@@ -321,54 +363,8 @@ export function TimeSlot({
     return meetingTypesList.filter((type) => allowedMeetingTypes.has(type));
   }, [meetingTypesList, activeClientTypes, hasAllClientType, clientData]);
 
-  // Build tooltip content for the timeslot
-  const tooltipContent = useMemo(() => {
-    const clientTypeNames = clientTypes
-      .map((type) => getClientTypeName(type))
-      .join(", ");
-    const meetingTypeNames = filteredMeetingTypes
-      .map((type) => MEETING_TYPE_STYLES[type]?.name || type)
-      .join(", ");
-
-    return (
-      <div className="bg-black/80 text-white p-2 rounded-md text-xs shadow-lg z-50 max-w-[200px]">
-        {/* Hebrew style time format (end - start) */}
-        <div className="font-bold">
-          {formatTime(endTime)} - {formatTime(startTime)}
-        </div>
-        <div>{durationStr}</div>
-        {isAdmin && clientTypeNames && (
-          <div className="mt-1">
-            <span className="text-gray-300">Client:</span> {clientTypeNames}
-          </div>
-        )}
-        <div className="mt-1">
-          <span className="text-gray-300">Meeting:</span> {meetingTypeNames}
-        </div>
-      </div>
-    );
-  }, [
-    formatTime,
-    endTime,
-    startTime,
-    durationStr,
-    clientTypes,
-    filteredMeetingTypes,
-    isAdmin,
-  ]);
-
+  // State for tooltip position
   const [tooltipPosition, setTooltipPosition] = React.useState({ x: 0, y: 0 });
-
-  // Handle mouse events for custom tooltip
-  const handleMouseEnter = (e: React.MouseEvent) => {
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setTooltipPosition(getTooltipPosition(rect));
-    setShowTooltip(true);
-  };
-
-  const handleMouseLeave = () => {
-    setShowTooltip(false);
-  };
 
   // For ultra-compact view, determine the primary meeting type to show
   const primaryMeetingType = useMemo(() => {
@@ -383,43 +379,6 @@ export function TimeSlot({
   const primaryMeetingStyle = primaryMeetingType
     ? MEETING_TYPE_STYLES[primaryMeetingType] || MEETING_TYPE_STYLES.default
     : MEETING_TYPE_STYLES.default;
-
-  // For client type ribbon tooltip
-  const [ribbonTooltip, setRibbonTooltip] = React.useState<{
-    show: boolean;
-    content: string;
-    x: number;
-    y: number;
-  }>({
-    show: false,
-    content: "",
-    x: 0,
-    y: 0,
-  });
-
-  // Handle ribbon mouse events
-  const handleRibbonMouseEnter = (
-    e: React.MouseEvent,
-    clientTypeName: string
-  ) => {
-    if (!isAdmin) return; // Only show in admin view
-
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setRibbonTooltip({
-      show: true,
-      content: clientTypeName,
-      x: rect.right + window.scrollX + 5,
-      y: rect.top + window.scrollY + rect.height / 2,
-    });
-
-    // Prevent parent tooltip from showing
-    e.stopPropagation();
-  };
-
-  const handleRibbonMouseLeave = (e: React.MouseEvent) => {
-    setRibbonTooltip({ ...ribbonTooltip, show: false });
-    e.stopPropagation();
-  };
 
   // Format time for Hebrew style (end - start)
   const hebrewStyleTimeRange = `${formatTime(endTime)} - ${formatTime(
@@ -454,12 +413,8 @@ export function TimeSlot({
               <div
                 className="absolute inset-0"
                 style={{ backgroundColor: "#6366f1" }}
-                onMouseEnter={
-                  isAdmin
-                    ? (e) => handleRibbonMouseEnter(e, "כל הלקוחות")
-                    : undefined
-                }
-                onMouseLeave={isAdmin ? handleRibbonMouseLeave : undefined}
+                onMouseEnter={handleRibbonMouseEnter}
+                onMouseLeave={handleRibbonMouseLeave}
               />
             ) : (
               clientTypes.map((type, index) => {
@@ -485,12 +440,8 @@ export function TimeSlot({
                       width: "100%",
                       backgroundColor: color,
                     }}
-                    onMouseEnter={
-                      isAdmin
-                        ? (e) => handleRibbonMouseEnter(e, name)
-                        : undefined
-                    }
-                    onMouseLeave={isAdmin ? handleRibbonMouseLeave : undefined}
+                    onMouseEnter={handleRibbonMouseEnter}
+                    onMouseLeave={handleRibbonMouseLeave}
                   />
                 );
               })
@@ -529,28 +480,34 @@ export function TimeSlot({
         {/* Custom tooltip */}
         {showTooltip && (
           <div
-            className="fixed pointer-events-none z-50"
+            className="fixed pointer-events-none z-[9999]"
             style={{
               left: `${tooltipPosition.x}px`,
               top: `${tooltipPosition.y}px`,
               transform: "translateY(-100%)", // Move up by its own height
             }}
           >
-            {tooltipContent}
-          </div>
-        )}
-
-        {/* Client type ribbon tooltip */}
-        {ribbonTooltip.show && (
-          <div
-            className="fixed pointer-events-none bg-black/80 text-white px-2 py-1 rounded-md text-xs shadow-lg z-50"
-            style={{
-              left: `${ribbonTooltip.x}px`,
-              top: `${ribbonTooltip.y}px`,
-              transform: "translateY(-50%)",
-            }}
-          >
-            {ribbonTooltip.content}
+            <div className="bg-black/80 text-white p-2 rounded-md text-xs shadow-lg max-w-[200px]">
+              {/* Hebrew style time format (end - start) */}
+              <div className="font-bold">
+                {formatTime(endTime)} - {formatTime(startTime)}
+              </div>
+              <div>{durationStr}</div>
+              {isAdmin && clientTypes.length > 0 && (
+                <div className="mt-1">
+                  <span className="text-gray-300">Client:</span>{" "}
+                  {clientTypes
+                    .map((type) => getClientTypeName(type))
+                    .join(", ")}
+                </div>
+              )}
+              <div className="mt-1">
+                <span className="text-gray-300">Meeting:</span>{" "}
+                {filteredMeetingTypes
+                  .map((type) => MEETING_TYPE_STYLES[type]?.name || type)
+                  .join(", ")}
+              </div>
+            </div>
           </div>
         )}
       </>
@@ -584,12 +541,8 @@ export function TimeSlot({
             <div
               className="absolute inset-0 client-type-ribbon"
               style={{ backgroundColor: "#6366f1" }}
-              onMouseEnter={
-                isAdmin
-                  ? (e) => handleRibbonMouseEnter(e, "כל הלקוחות")
-                  : undefined
-              }
-              onMouseLeave={isAdmin ? handleRibbonMouseLeave : undefined}
+              onMouseEnter={handleRibbonMouseEnter}
+              onMouseLeave={handleRibbonMouseLeave}
             />
           ) : (
             clientTypes.map((type, index) => {
@@ -616,10 +569,8 @@ export function TimeSlot({
                     width: "100%",
                     backgroundColor: color,
                   }}
-                  onMouseEnter={
-                    isAdmin ? (e) => handleRibbonMouseEnter(e, name) : undefined
-                  }
-                  onMouseLeave={isAdmin ? handleRibbonMouseLeave : undefined}
+                  onMouseEnter={handleRibbonMouseEnter}
+                  onMouseLeave={handleRibbonMouseLeave}
                 />
               );
             })
@@ -712,28 +663,32 @@ export function TimeSlot({
       {/* Custom tooltip */}
       {showTooltip && (
         <div
-          className="fixed pointer-events-none z-50"
+          className="fixed pointer-events-none z-[9999]"
           style={{
             left: `${tooltipPosition.x}px`,
             top: `${tooltipPosition.y}px`,
             transform: "translateY(-100%)",
           }}
         >
-          {tooltipContent}
-        </div>
-      )}
-
-      {/* Client type ribbon tooltip */}
-      {ribbonTooltip.show && (
-        <div
-          className="fixed pointer-events-none bg-black/80 text-white px-2 py-1 rounded-md text-xs shadow-lg z-50"
-          style={{
-            left: `${ribbonTooltip.x}px`,
-            top: `${ribbonTooltip.y}px`,
-            transform: "translateY(-50%)",
-          }}
-        >
-          {ribbonTooltip.content}
+          <div className="bg-black/80 text-white p-2 rounded-md text-xs shadow-lg max-w-[200px]">
+            {/* Hebrew style time format (end - start) */}
+            <div className="font-bold">
+              {formatTime(endTime)} - {formatTime(startTime)}
+            </div>
+            <div>{durationStr}</div>
+            {isAdmin && clientTypes.length > 0 && (
+              <div className="mt-1">
+                <span className="text-gray-300">Client:</span>{" "}
+                {clientTypes.map((type) => getClientTypeName(type)).join(", ")}
+              </div>
+            )}
+            <div className="mt-1">
+              <span className="text-gray-300">Meeting:</span>{" "}
+              {filteredMeetingTypes
+                .map((type) => MEETING_TYPE_STYLES[type]?.name || type)
+                .join(", ")}
+            </div>
+          </div>
         </div>
       )}
     </>
