@@ -165,6 +165,16 @@ export function TimeSlot({
   // Show exact remaining minutes if the timeslot was adjusted
   const displayDuration = timeslot.remainingMinutes || durationMinutes;
 
+  // Calculate remaining time from now
+  const now = new Date();
+  const remainingMinutes = Math.max(
+    0,
+    Math.floor((endTime.getTime() - now.getTime()) / (1000 * 60))
+  );
+
+  // Flag for timeslots that are ending soon (less than 20 minutes left)
+  const isEndingSoon = remainingMinutes > 0 && remainingMinutes < 20;
+
   const durationStr =
     displayDuration >= 60 * 12
       ? "Full Day Availability"
@@ -173,6 +183,22 @@ export function TimeSlot({
           displayDuration % 60 > 0 ? `${displayDuration % 60}m` : ""
         }`
       : `${displayDuration}m`;
+
+  // Special remaining time string for timeslots ending soon
+  const remainingTimeStr =
+    remainingMinutes > 0
+      ? remainingMinutes === 1
+        ? "דקה אחרונה"
+        : `${remainingMinutes} דקות נותרו`
+      : "";
+
+  // Format the tooltip position to appear above the element instead of below
+  const getTooltipPosition = (rect: DOMRect) => {
+    return {
+      x: rect.left + window.scrollX + rect.width / 2 - 75, // Center the tooltip
+      y: rect.top + window.scrollY - 10, // Position above the element with a small gap
+    };
+  };
 
   // Parse meeting types
   const meetingTypesList = timeslot.meetingTypes
@@ -336,10 +362,7 @@ export function TimeSlot({
   // Handle mouse events for custom tooltip
   const handleMouseEnter = (e: React.MouseEvent) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setTooltipPosition({
-      x: rect.left + window.scrollX,
-      y: rect.bottom + window.scrollY,
-    });
+    setTooltipPosition(getTooltipPosition(rect));
     setShowTooltip(true);
   };
 
@@ -412,7 +435,9 @@ export function TimeSlot({
           className={cn(
             "relative h-full w-full overflow-hidden rounded-lg border px-2 py-1 text-xs",
             isAvailable
-              ? "border-green-200 bg-green-50"
+              ? isEndingSoon
+                ? "border-orange-300 bg-orange-50" // Ending soon highlight
+                : "border-green-200 bg-green-50"
               : "border-gray-200 bg-gray-50",
             "hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors",
             "flex items-center justify-between", // Changed to justify-between
@@ -486,19 +511,29 @@ export function TimeSlot({
             )}
           </div>
 
-          {/* Right side - Time range in Hebrew style (end-start) */}
-          <span className="text-xs font-medium truncate text-right pl-6 pr-3 z-10">
-            {formatTime(endTime)} - {formatTime(startTime)}
-          </span>
+          {/* Right side - Time info */}
+          <div className="flex flex-col text-xs font-medium text-right pl-6 pr-3 z-10">
+            {/* Show time or remaining minutes based on whether timeslot is ending soon */}
+            {isEndingSoon ? (
+              <span className="text-orange-600 font-bold">
+                {remainingTimeStr}
+              </span>
+            ) : (
+              <span>
+                {formatTime(endTime)} - {formatTime(startTime)}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Custom tooltip */}
         {showTooltip && (
           <div
-            className="fixed pointer-events-none"
+            className="fixed pointer-events-none z-50"
             style={{
               left: `${tooltipPosition.x}px`,
-              top: `${tooltipPosition.y + 5}px`,
+              top: `${tooltipPosition.y}px`,
+              transform: "translateY(-100%)", // Move up by its own height
             }}
           >
             {tooltipContent}
@@ -529,7 +564,9 @@ export function TimeSlot({
         className={cn(
           "relative h-full w-full overflow-hidden rounded-lg border px-3 py-2 text-xs",
           isAvailable
-            ? "border-green-200 bg-green-50"
+            ? isEndingSoon
+              ? "border-orange-300 bg-orange-50" // Ending soon highlight
+              : "border-green-200 bg-green-50"
             : "border-gray-200 bg-gray-50",
           "hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors",
           "flex flex-col justify-between",
@@ -599,20 +636,34 @@ export function TimeSlot({
           <div className="flex items-center mb-1">
             <Clock
               size={isCompact ? 14 : 18}
-              className="text-gray-600 shrink-0"
+              className={cn(
+                "shrink-0",
+                isEndingSoon ? "text-orange-600" : "text-gray-600"
+              )}
             />
             <span
               className={cn(
-                "font-bold mx-1 text-gray-800",
+                "font-bold mx-1",
+                isEndingSoon ? "text-orange-600" : "text-gray-800",
                 isCompact ? "text-xs" : "text-base mx-2.5" // Smaller text for compact mode
               )}
             >
-              {/* Hebrew style time format (end - start) */}
-              {formatTime(endTime)} - {formatTime(startTime)}
+              {/* Show time or remaining minutes based on whether timeslot is ending soon */}
+              {isEndingSoon
+                ? remainingTimeStr
+                : /* Hebrew style time format (end - start) */
+                  `${formatTime(endTime)} - ${formatTime(startTime)}`}
             </span>
           </div>
           {!isCompact && (
-            <span className="text-gray-500 text-xs">{durationStr}</span>
+            <span
+              className={cn(
+                "text-xs",
+                isEndingSoon ? "text-orange-500 font-medium" : "text-gray-500"
+              )}
+            >
+              {isEndingSoon ? formatTime(endTime) : durationStr}
+            </span>
           )}
         </div>
 
@@ -664,7 +715,8 @@ export function TimeSlot({
           className="fixed pointer-events-none z-50"
           style={{
             left: `${tooltipPosition.x}px`,
-            top: `${tooltipPosition.y + 5}px`,
+            top: `${tooltipPosition.y}px`,
+            transform: "translateY(-100%)",
           }}
         >
           {tooltipContent}
