@@ -114,6 +114,7 @@ export function TimeSlot({
   // Store element ref to measure height
   const slotRef = React.useRef<HTMLDivElement>(null);
   const [isCompact, setIsCompact] = React.useState(false);
+  const [isUltraCompact, setIsUltraCompact] = React.useState(false);
   const [showTooltip, setShowTooltip] = React.useState(false);
   const isAdmin = viewMode === "admin";
 
@@ -123,6 +124,7 @@ export function TimeSlot({
       if (slotRef.current) {
         const height = slotRef.current.offsetHeight;
         setIsCompact(height < 85); // Switch to compact mode if height is less than 85px
+        setIsUltraCompact(height < 50); // Switch to ultra-compact mode if height is less than 50px
       }
     };
 
@@ -152,6 +154,7 @@ export function TimeSlot({
     });
   };
 
+  // Ensure start time comes before end time in display
   const timeRangeStr = `${formatTime(startTime)} - ${formatTime(endTime)}`;
 
   // Calculate duration for display
@@ -333,6 +336,110 @@ export function TimeSlot({
     setShowTooltip(false);
   };
 
+  // For ultra-compact view, determine the primary meeting type to show
+  const primaryMeetingType = useMemo(() => {
+    if (filteredMeetingTypes.length === 0) return null;
+    // Prioritize phone calls for quick appointments, then Zoom, then in-person
+    if (filteredMeetingTypes.includes("טלפון")) return "טלפון";
+    if (filteredMeetingTypes.includes("זום")) return "זום";
+    return filteredMeetingTypes[0];
+  }, [filteredMeetingTypes]);
+
+  // Get style for the primary meeting type
+  const primaryMeetingStyle = primaryMeetingType
+    ? MEETING_TYPE_STYLES[primaryMeetingType] || MEETING_TYPE_STYLES.default
+    : MEETING_TYPE_STYLES.default;
+
+  // Special ultra-compact single-line layout for very small slots
+  if (isUltraCompact) {
+    return (
+      <>
+        <div
+          ref={slotRef}
+          className={cn(
+            "relative h-full w-full overflow-hidden rounded-lg border px-2 py-1 text-xs",
+            isAvailable
+              ? "border-green-200 bg-green-50"
+              : "border-gray-200 bg-gray-50",
+            "hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors",
+            "flex items-center justify-center",
+            className
+          )}
+          onClick={onClick}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          {...props}
+        >
+          {/* Client type ribbon - thinner for ultra-compact */}
+          <div className="absolute right-0 top-0 bottom-0 w-1.5">
+            {clientTypes.length === 0 ? (
+              <div
+                className="absolute inset-0"
+                style={{ backgroundColor: "#6366f1" }}
+              />
+            ) : (
+              clientTypes.map((type, index) => {
+                const color = CLIENT_TYPE_COLORS[type] || stringToColor(type);
+                const height =
+                  clientTypes.length > 1
+                    ? `${100 / clientTypes.length}%`
+                    : "100%";
+                const top =
+                  clientTypes.length > 1
+                    ? `${(index * 100) / clientTypes.length}%`
+                    : "0";
+
+                return (
+                  <div
+                    key={index}
+                    style={{
+                      position: "absolute",
+                      top,
+                      right: 0,
+                      height,
+                      width: "100%",
+                      backgroundColor: color,
+                    }}
+                  />
+                );
+              })
+            )}
+          </div>
+
+          {/* Ultra-compact single line display with icon + short time */}
+          <div className="flex items-center justify-center w-full space-x-1 pl-1.5 pr-2">
+            {primaryMeetingType && (
+              <div
+                className="flex items-center justify-center rounded-full p-1"
+                style={{ backgroundColor: primaryMeetingStyle.color }}
+              >
+                {MEETING_TYPE_ICONS[primaryMeetingType] || (
+                  <Calendar size={10} className="text-white" />
+                )}
+              </div>
+            )}
+            <span className="text-xs font-medium truncate">
+              {formatTime(startTime)}
+            </span>
+          </div>
+        </div>
+
+        {/* Custom tooltip */}
+        {showTooltip && (
+          <div
+            className="fixed pointer-events-none"
+            style={{
+              left: `${tooltipPosition.x}px`,
+              top: `${tooltipPosition.y + 5}px`,
+            }}
+          >
+            {tooltipContent}
+          </div>
+        )}
+      </>
+    );
+  }
+
   return (
     <>
       <div
@@ -438,7 +545,6 @@ export function TimeSlot({
                       isCompact ? "px-1.5 py-0.5" : "px-2 py-1 gap-x-1" // Smaller padding for compact mode
                     )}
                     style={{ backgroundColor: style.color }}
-                    title={type}
                   >
                     <span className="flex items-center justify-center">
                       {MEETING_TYPE_ICONS[type] || (
@@ -464,7 +570,7 @@ export function TimeSlot({
       {/* Custom tooltip */}
       {showTooltip && (
         <div
-          className="fixed pointer-events-none"
+          className="fixed pointer-events-none z-50"
           style={{
             left: `${tooltipPosition.x}px`,
             top: `${tooltipPosition.y + 5}px`,
