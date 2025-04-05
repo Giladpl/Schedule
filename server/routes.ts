@@ -207,6 +207,37 @@ export async function registerRoutes(app: Express): Promise<void> {
         `[Debug] After current time filtering: ${timeslots.length} timeslots remaining`
       );
 
+      // For timeslots that have already started but not ended,
+      // adjust their start time to the next hour boundary from now
+      timeslots = timeslots.map((slot) => {
+        const slotStartTime = new Date(slot.startTime);
+
+        // If the slot has already started but not ended
+        if (slotStartTime < now) {
+          // Calculate the next hour boundary
+          const nextHourBoundary = new Date(now);
+          // Round up to the next hour
+          nextHourBoundary.setHours(nextHourBoundary.getHours() + 1, 0, 0, 0);
+
+          // Create a modified timeslot with adjusted start time
+          // We need to maintain the same type for startTime
+          const modifiedSlot = {
+            ...slot,
+            startTime: nextHourBoundary,
+          };
+
+          console.log(
+            `[Debug] Adjusted timeslot (${
+              slot.id
+            }): Original start=${slotStartTime.toISOString()}, New start=${nextHourBoundary.toISOString()}`
+          );
+
+          return modifiedSlot;
+        }
+
+        return slot;
+      });
+
       // Return filtered timeslots
       return res.json(timeslots);
     } catch (error) {
