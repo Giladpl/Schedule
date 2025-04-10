@@ -19,33 +19,66 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { signIn } = useAuth();
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { signIn, checkAdminStatus } = useAuth();
   const { toast } = useToast();
+
+  console.log("🔐 LoginForm rendered");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("🔐 Login form submitted");
+    setErrorMessage(null);
 
     if (!email || !password) {
-      toast({
-        title: "שגיאה",
-        description: "יש להזין אימייל וסיסמה",
-        variant: "destructive",
-      });
+      setErrorMessage("יש להזין אימייל וסיסמה");
       return;
     }
 
     setIsSubmitting(true);
 
     try {
+      // Sign in the user
+      console.log("🔐 Attempting sign in");
       await signIn(email, password);
-      toast({
-        title: "התחברות בוצעה בהצלחה",
-        description: "ברוכים הבאים למערכת ניהול הפגישות",
-      });
+      console.log("Login successful, checking admin status");
+
+      // Check if the user is an admin after login
+      const isUserAdmin = await checkAdminStatus();
+      console.log("Admin status:", isUserAdmin);
+
+      if (isUserAdmin) {
+        toast({
+          title: "התחברות בוצעה בהצלחה",
+          description: "ברוכים הבאים למערכת ניהול הפגישות",
+        });
+      } else {
+        setErrorMessage("משתמש זה אינו מוגדר כמנהל מערכת");
+        toast({
+          title: "הרשאות לא מספיקות",
+          description: "משתמש זה אינו מוגדר כמנהל מערכת",
+          variant: "destructive",
+        });
+      }
     } catch (error: any) {
+      console.error("Login error:", error);
+
+      // Handle common error messages and provide clear feedback
+      let message = "אירעה שגיאה בהתחברות. אנא נסו שנית";
+
+      if (error.message) {
+        if (error.message.includes("Invalid login credentials")) {
+          message = "שם משתמש או סיסמה לא נכונים";
+        } else if (error.message.includes("rate limited")) {
+          message = "יותר מדי ניסיונות התחברות, אנא נסו שוב בעוד מספר דקות";
+        }
+      }
+
+      setErrorMessage(message);
+
       toast({
         title: "שגיאת התחברות",
-        description: error.message || "אירעה שגיאה בהתחברות. אנא נסו שנית",
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -65,6 +98,12 @@ export function LoginForm() {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {errorMessage && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-600 text-sm">
+              {errorMessage}
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="email">אימייל</Label>
             <Input
