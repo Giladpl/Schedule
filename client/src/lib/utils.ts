@@ -32,11 +32,11 @@ export function formatDateRange(start: Date, end: Date): string {
   const startDay = start.getDate();
   const endDay = end.getDate();
   const year = start.getFullYear();
-  
+
   if (startMonth === endMonth) {
     return `${startMonth} ${startDay} - ${endDay}, ${year}`;
   }
-  
+
   return `${startMonth} ${startDay} - ${endMonth} ${endDay}, ${year}`;
 }
 
@@ -103,11 +103,11 @@ export function endOfDay(date: Date): Date {
 export function getWeekDays(date: Date): Date[] {
   const start = startOfWeek(date);
   const days: Date[] = [];
-  
+
   for (let i = 0; i < 7; i++) {
     days.push(addDays(start, i));
   }
-  
+
   return days;
 }
 
@@ -123,24 +123,24 @@ export function getDatesInMonth(year: number, month: number): Date[] {
   const dates: Date[] = [];
   const firstDayOfMonth = new Date(year, month, 1);
   const lastDayOfMonth = new Date(year, month + 1, 0);
-  
+
   // Add dates from previous month to fill the first week
   const firstDayOfWeek = firstDayOfMonth.getDay();
   for (let i = firstDayOfWeek; i > 0; i--) {
     const date = new Date(year, month, 1 - i);
     dates.push(date);
   }
-  
+
   // Add all dates of the current month
   for (let day = 1; day <= lastDayOfMonth.getDate(); day++) {
     dates.push(new Date(year, month, day));
   }
-  
+
   // Add dates from next month to fill the last week
   const lastDayOfWeek = lastDayOfMonth.getDay();
   for (let i = 1; i < 7 - lastDayOfWeek; i++) {
     dates.push(new Date(year, month + 1, i));
   }
-  
+
   return dates;
 }

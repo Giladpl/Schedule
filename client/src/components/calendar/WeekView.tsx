@@ -656,24 +656,22 @@ function DaySchedule({
         className="flex-shrink-0 border-b border-[#dadce0] bg-white"
         style={{ zIndex: 40, position: "relative" }}
       >
-        <div className="text-center py-3 relative">
+        <div className="text-center py-2 relative flex flex-col items-center justify-center h-[72px] ml-16">
           <div
-            className={`text-sm font-medium ${
+            className={`text-sm font-medium mb-1 ${
               isSameDay(day, now) ? "text-[#1a73e8]" : "text-[#5f6368]"
             }`}
           >
             {getDayName(day)}
           </div>
-          <div className="flex justify-center items-center mt-1">
-            <div
-              className={`${
-                isSameDay(day, now)
-                  ? "text-[#1a73e8] bg-[#1a73e8] bg-opacity-10 rounded-full"
-                  : ""
-              } w-10 h-10 flex items-center justify-center font-google-sans text-xl`}
-            >
-              {getDayOfMonth(day)}
-            </div>
+          <div
+            className={`${
+              isSameDay(day, now)
+                ? "text-[#1a73e8] bg-[#1a73e8] bg-opacity-10 rounded-full"
+                : ""
+            } w-10 h-10 flex items-center justify-center font-google-sans text-xl`}
+          >
+            {getDayOfMonth(day)}
           </div>
         </div>
       </div>
