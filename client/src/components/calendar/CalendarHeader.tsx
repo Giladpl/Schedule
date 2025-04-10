@@ -13,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import plantLogo from "../../assets/plant-logo.png";
+import { LogoutButton } from "../auth/LogoutButton";
 
 interface CalendarHeaderProps {
   currentViewStart: Date;
@@ -127,48 +128,51 @@ export default function CalendarHeader({
       {/* Right side: Settings and view toggle */}
       <div className="flex items-center order-1 justify-end">
         {isAdmin && (
-          <div className="relative ml-2">
-            <Button
-              onClick={toggleSettings}
-              variant="ghost"
-              size="icon"
-              className="rounded-full h-10 w-10"
-              ref={settingsButtonRef}
-              aria-label="הגדרות"
-            >
-              <Settings className="h-5 w-5" />
-            </Button>
+          <>
+            <div className="relative ml-2">
+              <Button
+                onClick={toggleSettings}
+                variant="ghost"
+                size="icon"
+                className="rounded-full h-10 w-10"
+                ref={settingsButtonRef}
+                aria-label="הגדרות"
+              >
+                <Settings className="h-5 w-5" />
+              </Button>
 
-            {showSettings &&
-              portalContainer &&
-              ReactDOM.createPortal(
-                <div
-                  className="fixed z-[9999] bg-white shadow-lg rounded-md p-2 border border-gray-200"
-                  style={{
-                    top: `${menuPosition.top}px`,
-                    right: `${menuPosition.right}px`,
-                    width: "200px",
-                  }}
-                >
-                  {isAdmin && onViewModeToggle && (
-                    <Button
-                      onClick={() => {
-                        onViewModeToggle();
-                        setShowSettings(false);
-                      }}
-                      variant="ghost"
-                      className="w-full justify-start text-sm font-normal px-3 h-9 hover:bg-gray-100"
-                    >
-                      <Gauge className="h-4 w-4 ml-2" />
-                      {currentViewMode === "admin"
-                        ? "מעבר לתצוגת לקוחות"
-                        : "מעבר לתצוגת אדמין"}
-                    </Button>
-                  )}
-                </div>,
-                portalContainer
-              )}
-          </div>
+              {showSettings &&
+                portalContainer &&
+                ReactDOM.createPortal(
+                  <div
+                    className="fixed z-[9999] bg-white shadow-lg rounded-md p-2 border border-gray-200"
+                    style={{
+                      top: `${menuPosition.top}px`,
+                      right: `${menuPosition.right}px`,
+                      width: "200px",
+                    }}
+                  >
+                    {isAdmin && onViewModeToggle && (
+                      <Button
+                        onClick={() => {
+                          onViewModeToggle();
+                          setShowSettings(false);
+                        }}
+                        variant="ghost"
+                        className="w-full justify-start text-sm font-normal px-3 h-9 hover:bg-gray-100"
+                      >
+                        <Gauge className="h-4 w-4 ml-2" />
+                        {currentViewMode === "admin"
+                          ? "מעבר לתצוגת לקוחות"
+                          : "מעבר לתצוגת אדמין"}
+                      </Button>
+                    )}
+                    <LogoutButton />
+                  </div>,
+                  portalContainer
+                )}
+            </div>
+          </>
         )}
 
         <Button

@@ -11,6 +11,7 @@ import MonthView from "@/components/calendar/MonthView";
 import Sidebar from "@/components/calendar/Sidebar";
 import WeekView from "@/components/calendar/WeekView";
 
+import { useAuth } from "@/contexts/AuthContext";
 import {
   createBooking,
   fetchClientData,
@@ -59,8 +60,8 @@ export default function Calendar() {
   } | null>(null);
 
   // Update the state to use arrays for multiple selection
-  const [viewMode, setViewMode] = useState<"admin" | "client">("admin");
-  const isAdmin = true;
+  const [viewMode, setViewMode] = useState<"admin" | "client">("client");
+  const { isAdmin } = useAuth();
 
   // Extract type from URL
   const queryType = searchParams.get("type");
