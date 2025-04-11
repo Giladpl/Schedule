@@ -145,6 +145,7 @@ function ExpandableTimeslots({
   onSelectTimeslot,
   activeClientTypes = [],
   usePercentage,
+  showTimeLabels = true,
 }: {
   slots: Timeslot[];
   timeKey: string;
@@ -153,6 +154,7 @@ function ExpandableTimeslots({
   onSelectTimeslot: (timeslot: Timeslot) => void;
   activeClientTypes?: string[];
   usePercentage: boolean;
+  showTimeLabels?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -482,6 +484,7 @@ function DaySchedule({
   cellHourHeight,
   usePercentage,
   isToday,
+  showTimeLabels = true,
 }: {
   day: Date;
   timeslots: Timeslot[] | Timeslot[][];
@@ -494,6 +497,7 @@ function DaySchedule({
   cellHourHeight: number;
   usePercentage: boolean;
   isToday: boolean;
+  showTimeLabels?: boolean;
 }) {
   const { width, height } = useWindowSize();
   const isMobile = useMemo(() => {
@@ -621,26 +625,34 @@ function DaySchedule({
             <div className="absolute inset-0">
               {/* Content container */}
               <div style={{ height: "100%", position: "relative" }}>
-                {/* Time markers */}
-                <div
-                  className="absolute left-0 top-0 bottom-0 w-16 border-r border-gray-200 bg-white"
-                  style={{ zIndex: 30 }}
-                >
-                  {hours.map((hour, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center bg-white"
-                      style={{ height: `${100 / TOTAL_HOURS}%` }}
-                    >
-                      <div className="w-16 text-xs text-gray-500 px-2 py-1 font-medium text-right">
-                        {`${hour}:00`}
+                {/* Time markers - Only show if showTimeLabels is true */}
+                {showTimeLabels && (
+                  <div
+                    className="absolute left-0 top-0 bottom-0 w-16 border-r border-gray-200 bg-white"
+                    style={{ zIndex: 30 }}
+                  >
+                    {hours.map((hour, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center bg-white"
+                        style={{ height: `${100 / TOTAL_HOURS}%` }}
+                      >
+                        <div className="w-16 text-xs text-gray-500 px-2 py-1 font-medium text-right">
+                          {`${hour}:00`}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
 
-                {/* Grid lines */}
-                <div className="absolute left-16 right-0 top-0 bottom-0">
+                {/* Grid lines - adjust left position based on whether time labels are shown */}
+                <div
+                  className="absolute top-0 bottom-0 border-r border-gray-200"
+                  style={{
+                    left: showTimeLabels ? "16px" : "0px",
+                    right: "0px",
+                  }}
+                >
                   {hours.map((hour, index) => (
                     <div
                       key={index}
@@ -686,6 +698,7 @@ function DaySchedule({
                           onSelectTimeslot={onSelectTimeslot}
                           activeClientTypes={activeClientTypes}
                           usePercentage={true}
+                          showTimeLabels={showTimeLabels}
                         />
                       );
                     } else {
@@ -695,7 +708,7 @@ function DaySchedule({
                           style={{
                             position: "absolute",
                             top: `${startPercent}%`,
-                            left: "18px",
+                            left: showTimeLabels ? "18px" : "2px",
                             right: "2px",
                             height: `${heightPercent}%`,
                             zIndex: 20,
@@ -727,7 +740,11 @@ function DaySchedule({
         className="flex-shrink-0 border-b border-[#dadce0] bg-white"
         style={{ zIndex: 40, position: "relative" }}
       >
-        <div className="text-center py-2 relative flex flex-col items-center justify-center h-[72px] ml-16">
+        <div
+          className={`text-center py-2 relative flex flex-col items-center justify-center h-[72px] ${
+            showTimeLabels ? "ml-16" : ""
+          }`}
+        >
           <div
             className={`text-sm font-medium mb-1 ${
               isSameDay(day, now) ? "text-[#1a73e8]" : "text-[#5f6368]"
@@ -753,28 +770,36 @@ function DaySchedule({
         <div className="absolute inset-0">
           {/* Content container with all hours visible */}
           <div style={{ height: "100%", position: "relative" }}>
-            {/* Hour markers */}
-            <div
-              className="w-16 absolute left-0 top-0 bottom-0 border-r border-[#dadce0] bg-white"
-              style={{ zIndex: 30 }}
-            >
-              {hours.map((hour, index) => (
-                <div
-                  key={index}
-                  className="text-right pr-2 text-xs text-[#5f6368] font-medium bg-white"
-                  style={{
-                    height: `${100 / TOTAL_HOURS}%`,
-                    position: "relative",
-                    paddingTop: "4px",
-                  }}
-                >
-                  {`${hour}:00`}
-                </div>
-              ))}
-            </div>
+            {/* Hour markers - Only show if showTimeLabels is true */}
+            {showTimeLabels && (
+              <div
+                className="w-16 absolute left-0 top-0 bottom-0 border-r border-[#dadce0] bg-white"
+                style={{ zIndex: 30 }}
+              >
+                {hours.map((hour, index) => (
+                  <div
+                    key={index}
+                    className="text-right pr-2 text-xs text-[#5f6368] font-medium bg-white"
+                    style={{
+                      height: `${100 / TOTAL_HOURS}%`,
+                      position: "relative",
+                      paddingTop: "4px",
+                    }}
+                  >
+                    {`${hour}:00`}
+                  </div>
+                ))}
+              </div>
+            )}
 
-            {/* Grid and timeslots */}
-            <div className="ml-16 absolute left-0 right-0 top-0 bottom-0 border-r border-[#dadce0]">
+            {/* Grid and timeslots - adjust left position based on whether time labels are shown */}
+            <div
+              className="absolute top-0 bottom-0 border-r border-[#dadce0]"
+              style={{
+                left: showTimeLabels ? "16px" : "0px",
+                right: "0px",
+              }}
+            >
               {/* Horizontal grid lines */}
               {hours.map((hour, index) => (
                 <div
@@ -820,6 +845,7 @@ function DaySchedule({
                         onSelectTimeslot={onSelectTimeslot}
                         activeClientTypes={activeClientTypes}
                         usePercentage={true}
+                        showTimeLabels={showTimeLabels}
                       />
                     );
                   }
@@ -1217,67 +1243,101 @@ export default function WeekView({
     return isSameDay(date, today);
   };
 
+  // Define hours array based on the previously defined hourLabels
+  const hours = useMemo(() => {
+    const hoursArray = [];
+    for (let i = 7; i <= 22; i++) {
+      hoursArray.push(i);
+    }
+    return hoursArray;
+  }, []);
+
   return (
     <div className="flex flex-col h-full" dir="rtl">
       <CalendarInfo isAdmin={viewMode === "admin"} />
-      <div className="grid grid-cols-7 gap-0 border border-[#dadce0] flex-1 overflow-hidden">
-        {days.map((day, i) => {
-          if (!isValid(day)) {
-            return (
-              <div key={i} className="bg-red-50 p-2 text-red-500 text-xs">
-                Invalid date error
-              </div>
-            );
-          }
+      <div className="flex flex-1 overflow-hidden">
+        {/* Single Time Labels Column */}
+        <div className="w-16 flex-shrink-0 pt-[72px]">
+          {" "}
+          {/* Add padding to align with day headers */}
+          {hours.map((hour: number, index: number) => (
+            <div
+              key={index}
+              className="text-right pr-2 text-xs text-[#5f6368] font-medium"
+              style={{
+                height: `${globalHourHeight}px`,
+                position: "relative",
+                paddingTop: "4px",
+              }}
+            >
+              {`${hour}:00`}
+            </div>
+          ))}
+        </div>
 
-          let dayFormatStr;
-          try {
-            dayFormatStr = format(day, "yyyy-MM-dd");
-          } catch (error) {
-            console.error("Error formatting day:", day, error);
-            dayFormatStr = "";
-          }
-
-          // Get timeslots for this day that match the meeting type filter
-          let dayTimeslots: Timeslot[] = [];
-          if (dayGroups[dayFormatStr]) {
-            // Flatten the groups of timeslots for this day
-            const allDayTimeslots = dayGroups[dayFormatStr].flat();
-
-            // Filter by meeting type if needed
-            if (
-              selectedMeetingTypes.length > 0 &&
-              selectedMeetingTypes.includes("all")
-            ) {
-              dayTimeslots = allDayTimeslots;
-            } else {
-              dayTimeslots = allDayTimeslots.filter((slot) => {
-                // Check if this slot has the selected meeting type
-                const meetingTypes =
-                  slot.meetingTypes?.split(",").map((t) => t.trim()) || [];
-                return meetingTypes.some((type) =>
-                  selectedMeetingTypes.includes(type)
-                );
-              });
+        {/* Days Grid */}
+        <div className="grid grid-cols-7 gap-0 border border-[#dadce0] flex-1">
+          {days.map((day, i) => {
+            if (!isValid(day)) {
+              return (
+                <div key={i} className="bg-red-50 p-2 text-red-500 text-xs">
+                  Invalid date error
+                </div>
+              );
             }
-          }
 
-          return (
-            <DaySchedule
-              key={i}
-              day={day}
-              timeslots={dayTimeslots}
-              onSelectTimeslot={onTimeslotClick || (() => {})}
-              selectedDate={day}
-              activeClientTypes={activeClientTypes || ["all"]}
-              isAdmin={viewMode === "admin"}
-              meetingType={selectedMeetingTypes.join(",")}
-              cellHourHeight={globalHourHeight}
-              usePercentage={true}
-              isToday={isToday(day)}
-            />
-          );
-        })}
+            let dayFormatStr;
+            try {
+              dayFormatStr = format(day, "yyyy-MM-dd");
+            } catch (error) {
+              console.error("Error formatting day:", day, error);
+              dayFormatStr = "";
+            }
+
+            // Get timeslots for this day that match the meeting type filter
+            let dayTimeslots: Timeslot[] = [];
+            if (dayGroups[dayFormatStr]) {
+              // Flatten the groups of timeslots for this day
+              const allDayTimeslots = dayGroups[dayFormatStr].flat();
+
+              // Filter by meeting type if needed
+              if (
+                selectedMeetingTypes.length > 0 &&
+                selectedMeetingTypes.includes("all")
+              ) {
+                dayTimeslots = allDayTimeslots;
+              } else {
+                dayTimeslots = allDayTimeslots.filter((slot) => {
+                  // Check if this slot has the selected meeting type
+                  const meetingTypes =
+                    slot.meetingTypes?.split(",").map((t) => t.trim()) || [];
+                  return meetingTypes.some((type) =>
+                    selectedMeetingTypes.includes(type)
+                  );
+                });
+              }
+            }
+
+            return (
+              <DaySchedule
+                key={i}
+                day={day}
+                timeslots={dayTimeslots}
+                onSelectTimeslot={onTimeslotClick || (() => {})}
+                selectedDate={day}
+                activeClientTypes={activeClientTypes || ["all"]}
+                isAdmin={viewMode === "admin"}
+                meetingType={selectedMeetingTypes.join(",")}
+                cellHourHeight={globalHourHeight}
+                usePercentage={true}
+                isToday={isToday(day)}
+                showTimeLabels={
+                  false
+                } /* Add prop to disable time labels in day columns */
+              />
+            );
+          })}
+        </div>
       </div>
     </div>
   );
