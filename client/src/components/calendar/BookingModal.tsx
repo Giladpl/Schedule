@@ -301,6 +301,13 @@ export function BookingModal({
   const startDate = new Date(timeslot.startTime);
   const endDate = new Date(timeslot.endTime);
 
+  // If endTime is earlier than startTime, it's likely an error in the data
+  // In that case, swap them for display purposes only
+  const displayStartDate =
+    startDate.getTime() < endDate.getTime() ? startDate : endDate;
+  const displayEndDate =
+    startDate.getTime() < endDate.getTime() ? endDate : startDate;
+
   // Parse meeting types from the timeslot string
   const availableMeetingTypes = timeslot.meetingTypes
     .split(",")
@@ -315,8 +322,8 @@ export function BookingModal({
             Book Appointment
           </DialogTitle>
           <DialogDescription>
-            {formatDate(startDate)} • {formatTime(startDate)} -{" "}
-            {formatTime(endDate)}
+            {formatDate(displayStartDate)} • {formatTime(displayStartDate)} -{" "}
+            {formatTime(displayEndDate)}
           </DialogDescription>
         </DialogHeader>
 
@@ -327,11 +334,12 @@ export function BookingModal({
                 <div>
                   <div className="flex items-center text-lg font-medium">
                     <Calendar className="h-5 w-5 mr-2 text-blue-600" />
-                    {formatDate(startDate)}
+                    {formatDate(displayStartDate)}
                   </div>
                   <div className="flex items-center text-gray-600 mt-1">
                     <Clock className="h-4 w-4 mr-2" />
-                    {formatTime(startDate)} - {formatTime(endDate)}
+                    {formatTime(displayStartDate)} -{" "}
+                    {formatTime(displayEndDate)}
                   </div>
                 </div>
                 <div className="flex items-center">

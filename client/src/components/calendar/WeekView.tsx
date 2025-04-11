@@ -166,6 +166,13 @@ function ExpandableTimeslots({
   const startTime = new Date(slots[0].startTime);
   const endTime = new Date(slots[0].endTime);
 
+  // If endTime is earlier than startTime, it's likely an error in the data
+  // In that case, swap them for display purposes only
+  const displayStartTime =
+    startTime.getTime() < endTime.getTime() ? startTime : endTime;
+  const displayEndTime =
+    startTime.getTime() < endTime.getTime() ? endTime : startTime;
+
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString("he-IL", {
       hour: "2-digit",
@@ -176,7 +183,7 @@ function ExpandableTimeslots({
 
   // Calculate duration for a nicer display
   const durationMinutes = Math.round(
-    (endTime.getTime() - startTime.getTime()) / (1000 * 60)
+    (displayEndTime.getTime() - displayStartTime.getTime()) / (1000 * 60)
   );
   const durationStr =
     durationMinutes >= 60
@@ -237,7 +244,7 @@ function ExpandableTimeslots({
           {/* Header with time */}
           <div className="bg-blue-100 px-3 py-1.5 rounded-t-lg border-b border-blue-200">
             <div className="font-bold text-blue-700 text-center">
-              {formatTime(startTime)} - {formatTime(endTime)}
+              {formatTime(displayStartTime)} - {formatTime(displayEndTime)}
             </div>
             <div className="text-xs text-blue-600 text-center">
               {durationStr}
@@ -305,7 +312,7 @@ function ExpandableTimeslots({
           <div className="flex justify-between items-center mb-3 border-b pb-2">
             <div>
               <span className="font-bold text-blue-800">
-                {formatTime(startTime)} - {formatTime(endTime)}
+                {formatTime(displayStartTime)} - {formatTime(displayEndTime)}
               </span>
               <div className="text-xs text-gray-500">{durationStr}</div>
             </div>
@@ -413,8 +420,19 @@ function CurrentTimeIndicator() {
   const currentHour = currentTime.getHours();
   const currentMinute = currentTime.getMinutes();
 
-  // Calculate percentage for positioning (0-24h scale)
-  const hourPercentage = ((currentHour - 7 + currentMinute / 60) / 16) * 100;
+  // Fixed hour range - from 7 AM to 10 PM (7-22)
+  const START_HOUR = 7;
+  const END_HOUR = 22;
+  const TOTAL_HOURS = END_HOUR - START_HOUR + 1;
+
+  // Calculate percentage for positioning within the visible range
+  const hourFraction = currentHour + currentMinute / 60;
+  const hourPercentage = ((hourFraction - START_HOUR) / TOTAL_HOURS) * 100;
+
+  // Only show if within the visible range
+  if (hourFraction < START_HOUR || hourFraction > END_HOUR) {
+    return null;
+  }
 
   return (
     <div
@@ -561,8 +579,8 @@ function DaySchedule({
 
   // Calculate adaptive hour height based on available space (min 48px, prefer 64px)
   const dayCellHourHeight = Math.max(
-    48,
-    Math.min(64, Math.floor(availableHeight / TOTAL_HOURS))
+    45,
+    Math.min(60, Math.floor(availableHeight / TOTAL_HOURS))
   );
 
   const hours = useMemo(() => {
@@ -595,7 +613,7 @@ function DaySchedule({
                       <div
                         key={index}
                         className="flex items-center bg-white"
-                        style={{ height: `${100 / TOTAL_HOURS}%` }}
+                        style={{ height: `75px` }}
                       >
                         <div className="w-16 text-xs text-gray-500 px-2 py-1 font-medium text-right">
                           {`${hour}:00`}
@@ -617,7 +635,7 @@ function DaySchedule({
                     <div
                       key={index}
                       className="border-t border-gray-200"
-                      style={{ height: `${100 / TOTAL_HOURS}%` }}
+                      style={{ height: `75px` }}
                     ></div>
                   ))}
                 </div>
@@ -628,19 +646,40 @@ function DaySchedule({
                     const firstSlot = slots[0];
                     const startTime = new Date(firstSlot.startTime);
                     const endTime = new Date(firstSlot.endTime);
+
+                    // If endTime is earlier than startTime, swap them for positioning calculation only
+                    const positionStartTime =
+                      startTime.getTime() < endTime.getTime()
+                        ? startTime
+                        : endTime;
+                    const positionEndTime =
+                      startTime.getTime() < endTime.getTime()
+                        ? endTime
+                        : startTime;
+
+                    // Calculate hour fractions using the correct positioning time
                     const startHourFraction =
-                      startTime.getHours() + startTime.getMinutes() / 60;
+                      positionStartTime.getHours() +
+                      positionStartTime.getMinutes() / 60;
                     const endHourFraction =
-                      endTime.getHours() + endTime.getMinutes() / 60;
+                      positionEndTime.getHours() +
+                      positionEndTime.getMinutes() / 60;
 
                     // Calculate position as percentage of total visible hours
                     const startPercent =
                       ((startHourFraction - START_HOUR) / TOTAL_HOURS) * 100;
+
+                    // Ensure startPercent is not negative (could happen if slot starts before visible range)
+                    const adjustedStartPercent = Math.max(0, startPercent);
+
+                    // Calculate height percentage making sure it's proportional to the duration
                     const heightPercent =
-                      ((endHourFraction - startHourFraction) / TOTAL_HOURS) *
+                      ((endHourFraction -
+                        Math.max(startHourFraction, START_HOUR)) /
+                        TOTAL_HOURS) *
                       100;
 
-                    // Only show if within visible range
+                    // Only show if there's any part of the slot in visible range
                     if (
                       startHourFraction >= END_HOUR + 1 ||
                       endHourFraction <= START_HOUR
@@ -653,7 +692,7 @@ function DaySchedule({
                           key={timeKey}
                           slots={slots}
                           timeKey={timeKey}
-                          top={`${startPercent}%`}
+                          top={`${adjustedStartPercent}%`}
                           height={`${heightPercent}%`}
                           onSelectTimeslot={onSelectTimeslot}
                           activeClientTypes={["all"]}
@@ -667,7 +706,7 @@ function DaySchedule({
                           key={timeKey}
                           style={{
                             position: "absolute",
-                            top: `${startPercent}%`,
+                            top: `${adjustedStartPercent}%`,
                             left: showTimeLabels ? "18px" : "2px",
                             right: "2px",
                             height: `${heightPercent}%`,
@@ -741,7 +780,7 @@ function DaySchedule({
                     key={index}
                     className="text-right pr-2 text-xs text-[#5f6368] font-medium bg-white"
                     style={{
-                      height: `${100 / TOTAL_HOURS}%`,
+                      height: `75px`, // Increase the height of each hour row
                       position: "relative",
                       paddingTop: "4px",
                     }}
@@ -765,7 +804,7 @@ function DaySchedule({
                 <div
                   key={index}
                   className="border-t border-[#dadce0]"
-                  style={{ height: `${100 / TOTAL_HOURS}%` }}
+                  style={{ height: `75px` }}
                 ></div>
               ))}
 
@@ -775,18 +814,40 @@ function DaySchedule({
                   const firstSlot = slots[0];
                   const startTime = new Date(firstSlot.startTime);
                   const endTime = new Date(firstSlot.endTime);
+
+                  // If endTime is earlier than startTime, swap them for positioning calculation only
+                  const positionStartTime =
+                    startTime.getTime() < endTime.getTime()
+                      ? startTime
+                      : endTime;
+                  const positionEndTime =
+                    startTime.getTime() < endTime.getTime()
+                      ? endTime
+                      : startTime;
+
+                  // Calculate hour fractions using the correct positioning time
                   const startHourFraction =
-                    startTime.getHours() + startTime.getMinutes() / 60;
+                    positionStartTime.getHours() +
+                    positionStartTime.getMinutes() / 60;
                   const endHourFraction =
-                    endTime.getHours() + endTime.getMinutes() / 60;
+                    positionEndTime.getHours() +
+                    positionEndTime.getMinutes() / 60;
 
                   // Calculate position as percentage of total visible hours
                   const startPercent =
                     ((startHourFraction - START_HOUR) / TOTAL_HOURS) * 100;
-                  const heightPercent =
-                    ((endHourFraction - startHourFraction) / TOTAL_HOURS) * 100;
 
-                  // Only show if within visible range
+                  // Ensure startPercent is not negative (could happen if slot starts before visible range)
+                  const adjustedStartPercent = Math.max(0, startPercent);
+
+                  // Calculate height percentage making sure it's proportional to the duration
+                  const heightPercent =
+                    ((endHourFraction -
+                      Math.max(startHourFraction, START_HOUR)) /
+                      TOTAL_HOURS) *
+                    100;
+
+                  // Only show if there's any part of the slot in visible range
                   if (
                     startHourFraction >= END_HOUR + 1 ||
                     endHourFraction <= START_HOUR
@@ -800,7 +861,7 @@ function DaySchedule({
                         key={timeKey}
                         slots={slots}
                         timeKey={timeKey}
-                        top={`${startPercent}%`}
+                        top={`${adjustedStartPercent}%`}
                         height={`${heightPercent}%`}
                         onSelectTimeslot={onSelectTimeslot}
                         activeClientTypes={["all"]}
@@ -817,7 +878,7 @@ function DaySchedule({
                         key={timeKey}
                         style={{
                           position: "absolute",
-                          top: `${startPercent}%`,
+                          top: `${adjustedStartPercent}%`,
                           left: "2px",
                           right: "2px",
                           height: `${heightPercent}%`,
@@ -855,7 +916,7 @@ function DaySchedule({
                       key={timeKey}
                       style={{
                         position: "absolute",
-                        top: `${startPercent}%`,
+                        top: `${adjustedStartPercent}%`,
                         left: "2px",
                         right: "2px",
                         height: `${heightPercent}%`,
@@ -1040,9 +1101,9 @@ export default function WeekView({
   useEffect(() => {
     const calculateHourHeight = () => {
       if (timeGridRef.current) {
-        const availableHeight = timeGridRef.current.clientHeight;
-        const totalHours = hourLabels.length;
-        const newHourHeight = Math.max(60, availableHeight / totalHours);
+        // Set a consistent size that ensures all hours fit without scrolling
+        // For a 16-hour range (7-22), each hour should be 75px tall to fit comfortably
+        const newHourHeight = 75; // Fixed height that ensures all hours fit
         setGlobalHourHeight(newHourHeight);
       }
     };
@@ -1087,17 +1148,24 @@ export default function WeekView({
   return (
     <div className="flex flex-col h-full" dir="rtl">
       <CalendarInfo isAdmin={viewMode === "admin"} />
-      <div className="flex flex-1 overflow-hidden">
+      <div
+        className="flex flex-1 overflow-visible"
+        ref={timeGridRef}
+        style={{
+          minHeight: "1300px", // Increased to ensure all hours are visible (16 hours * 75px + header)
+          height: "auto",
+          maxHeight: "none",
+          overflowY: "visible", // Ensure no scrolling is required
+        }}
+      >
         {/* Single Time Labels Column */}
         <div className="w-16 flex-shrink-0 pt-[72px]">
-          {" "}
-          {/* Add padding to align with day headers */}
           {hours.map((hour: number, index: number) => (
             <div
               key={index}
               className="text-right pr-2 text-xs text-[#5f6368] font-medium"
               style={{
-                height: `${globalHourHeight}px`,
+                height: `75px`, // Increase the height of each hour row
                 position: "relative",
                 paddingTop: "4px",
               }}
@@ -1108,7 +1176,7 @@ export default function WeekView({
         </div>
 
         {/* Days Grid */}
-        <div className="grid grid-cols-7 gap-0 border border-[#dadce0] flex-1">
+        <div className="grid grid-cols-7 gap-0 border border-[#dadce0] flex-1 min-h-full">
           {days.map((day, i) => {
             if (!isValid(day)) {
               return (

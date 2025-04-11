@@ -567,16 +567,21 @@ export function filterTimeslots(
 
     if (startTime < currentTime && endTime > currentTime) {
       // For slots that have started but not ended, adjust the start time to now + buffer
-      // The server seems to use a 15-minute buffer
+      // The server rounds up to the next 15-minute boundary
       const adjustedStart = new Date(currentTime);
       adjustedStart.setMinutes(adjustedStart.getMinutes() + 15 - (adjustedStart.getMinutes() % 15));
 
       console.log(`Adjusting slot ${slot.id}: Original start=${startTime.toISOString()}, New start=${adjustedStart.toISOString()}`);
 
+      // Calculate remaining time in minutes
+      const remainingTimeInMinutes = (endTime.getTime() - adjustedStart.getTime()) / (1000 * 60);
+
       // Create a new slot with the adjusted start time
       const newSlot: Timeslot = {
         ...slot,
-        startTime: adjustedStart
+        startTime: adjustedStart,
+        wasAdjusted: true,
+        remainingMinutes: remainingTimeInMinutes
       };
 
       return newSlot;
@@ -687,13 +692,17 @@ export function getBookingConfirmationText(
 
 export function getTimeslotPosition(
   timeslot: Timeslot,
-  firstHour: number = 9
+  firstHour: number = 7
 ): { top: number; height: number } {
   const start = new Date(timeslot.startTime);
   const end = new Date(timeslot.endTime);
 
-  const startHour = start.getHours() + start.getMinutes() / 60;
-  const endHour = end.getHours() + end.getMinutes() / 60;
+  // If endTime is earlier than startTime, swap them for positioning
+  const positionStart = start.getTime() < end.getTime() ? start : end;
+  const positionEnd = start.getTime() < end.getTime() ? end : start;
+
+  const startHour = positionStart.getHours() + positionStart.getMinutes() / 60;
+  const endHour = positionEnd.getHours() + positionEnd.getMinutes() / 60;
 
   const top = (startHour - firstHour) * 64; // 64px per hour (16px * 4)
   const height = (endHour - startHour) * 64;

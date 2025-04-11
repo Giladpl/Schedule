@@ -177,6 +177,14 @@ export function TimeSlot({
   const startTime = new Date(timeslot.startTime);
   const endTime = new Date(timeslot.endTime);
 
+  // In component, check for this specific pattern:
+  // If endTime is earlier than startTime, it's likely an error in the data,
+  // In that case, swap them for display purposes only
+  const displayStartTime =
+    startTime.getTime() < endTime.getTime() ? startTime : endTime;
+  const displayEndTime =
+    startTime.getTime() < endTime.getTime() ? endTime : startTime;
+
   // Format the time range with 24-hour format
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString("he-IL", {
@@ -365,7 +373,7 @@ export function TimeSlot({
           <Clock size={18} className="text-blue-400 shrink-0" />
         </div>
         <div className="flex-1 font-bold leading-tight">
-          {formatTime(startTime)} - {formatTime(endTime)}
+          {formatTime(displayStartTime)} - {formatTime(displayEndTime)}
           <div className="text-gray-300 text-xs font-normal mt-1">
             {durationStr}
           </div>
@@ -542,9 +550,13 @@ export function TimeSlot({
               <span className="text-orange-600 font-bold">
                 {remainingTimeStr}
               </span>
+            ) : displayStartTime.getTime() === displayEndTime.getTime() ||
+              Math.abs(displayEndTime.getTime() - displayStartTime.getTime()) <
+                15 * 60 * 1000 ? (
+              <span>נותרו {durationStr}</span>
             ) : (
               <span>
-                {formatTime(endTime)} - {formatTime(startTime)}
+                {formatTime(displayStartTime)} - {formatTime(displayEndTime)}
               </span>
             )}
             <span className="text-gray-500 text-[10px]">{durationStr}</span>
@@ -665,8 +677,16 @@ export function TimeSlot({
               {/* Show time or remaining minutes based on whether timeslot is ending soon */}
               {isEndingSoon
                 ? remainingTimeStr
-                : /* Hebrew style time format (end - start) */
-                  `${formatTime(endTime)} - ${formatTime(startTime)}`}
+                : /* Modified to show start-end format despite RTL context */
+                displayStartTime.getTime() === displayEndTime.getTime() ||
+                  Math.abs(
+                    displayEndTime.getTime() - displayStartTime.getTime()
+                  ) <
+                    15 * 60 * 1000
+                ? `נותרו ${durationStr}` // "X time left" for very short or identical times
+                : `${formatTime(displayStartTime)} - ${formatTime(
+                    displayEndTime
+                  )}`}
             </span>
             <Clock
               size={isCompact ? 14 : 18}
@@ -683,7 +703,15 @@ export function TimeSlot({
                 isEndingSoon ? "text-orange-500 font-medium" : "text-gray-500"
               )}
             >
-              {isEndingSoon ? formatTime(endTime) : durationStr}
+              {isEndingSoon
+                ? formatTime(displayEndTime)
+                : displayStartTime.getTime() === displayEndTime.getTime() ||
+                  Math.abs(
+                    displayEndTime.getTime() - displayStartTime.getTime()
+                  ) <
+                    15 * 60 * 1000
+                ? formatTime(displayEndTime) // Show end time for very short durations
+                : durationStr}
             </span>
           )}
         </div>
