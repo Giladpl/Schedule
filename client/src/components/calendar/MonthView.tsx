@@ -1,6 +1,7 @@
 import {
   getClientTypeDisplayName,
   groupTimeslotsByDay,
+  shouldShowTimeslot,
 } from "@/lib/calendarService";
 import { getNowInIsrael } from "@/lib/timeUtils";
 import { getDatesInMonth, isSameDay } from "@/lib/utils";
@@ -39,87 +40,60 @@ export default function MonthView({
     return getDatesInMonth(currentDate.getFullYear(), currentDate.getMonth());
   }, [currentDate]);
 
-  // Group timeslots by day in useMemo to improve performance
+  // Group timeslots by day in useMemo to improve performance - Match WeekView logic exactly
   const timeslotsByDay = useMemo(() => {
     console.log(
       `Organizing ${timeslots.length} timeslots by day for month view`
     );
 
-    // Log a sample of timeslots to debug
+    // IMPORTANT: Log the original timeslots that come from the API for debugging
     if (timeslots.length > 0) {
-      console.log(
-        `Sample first timeslot: ${JSON.stringify({
-          id: timeslots[0].id,
-          startTime: timeslots[0].startTime,
-          endTime: timeslots[0].endTime,
-          isAvailable: timeslots[0].isAvailable,
-          meetingTypes: timeslots[0].meetingTypes,
-          clientType: timeslots[0].clientType,
-        })}`
-      );
+      const sampleSlots = timeslots.slice(0, Math.min(3, timeslots.length));
+      sampleSlots.forEach((slot, i) => {
+        console.log(
+          `Original API timeslot ${i}: ID=${slot.id}, Start=${new Date(
+            slot.startTime
+          ).toISOString()}, End=${new Date(
+            slot.endTime
+          ).toISOString()}, Types=${slot.meetingTypes}, Available=${
+            slot.isAvailable
+          }`
+        );
+      });
     }
 
-    // Use strict timeslot filtering before grouping to ensure consistency
-    const validTimeslots = timeslots.filter((slot) => {
-      try {
-        // 1. Ensure the slot is available
-        if (!slot.isAvailable) {
-          return false;
-        }
-
-        // 2. Check for client type match - use exact same logic as in WeekView
-        const hasAllClientType = activeClientTypes.includes("all");
-        const clientTypeMatch =
-          hasAllClientType ||
-          slot.clientType === "all" ||
-          activeClientTypes.includes(slot.clientType) ||
-          (Array.isArray(slot.clientType) &&
-            slot.clientType.some((ct) => activeClientTypes.includes(ct)));
-
-        if (!clientTypeMatch) {
-          return false;
-        }
-
-        // 3. Ensure dates are valid
-        const startTime = new Date(slot.startTime);
-        const endTime = new Date(slot.endTime);
-
-        if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
-          console.error("Invalid date in timeslot:", slot);
-          return false;
-        }
-
-        // 4. Check if the timeslot is in the past
-        if (startTime < now && !isSameDay(startTime, now)) {
-          return false;
-        }
-
-        // For today, check if the slot hasn't ended yet
-        if (isSameDay(startTime, now) && endTime < now) {
-          return false;
-        }
-
-        return true;
-      } catch (error) {
-        console.error("Error filtering timeslot:", error, slot);
-        return false;
-      }
-    });
+    // Use the shared helper function to consistently filter timeslots
+    const validTimeslots = timeslots.filter((slot) =>
+      shouldShowTimeslot(slot, now, activeClientTypes)
+    );
 
     console.log(
       `After pre-filtering: ${validTimeslots.length} valid timeslots for month view`
     );
 
-    // Log all valid dates with slots
+    // Log the valid timeslots to check what we're passing to groupTimeslotsByDay
     const validDates = new Set<string>();
     validTimeslots.forEach((slot) => {
-      const date = new Date(slot.startTime);
-      validDates.add(date.toISOString().split("T")[0]);
+      const dateStr = new Date(slot.startTime).toISOString().split("T")[0];
+      validDates.add(dateStr);
+
+      // Print detailed logs for each valid timeslot
+      console.log(
+        `Valid timeslot: ID=${slot.id}, Date=${dateStr}, Types=${slot.meetingTypes}`
+      );
     });
 
     console.log(`Valid dates with slots: ${Array.from(validDates).join(", ")}`);
 
-    return groupTimeslotsByDay(validTimeslots);
+    // Now group the filtered timeslots by day
+    const grouped = groupTimeslotsByDay(validTimeslots);
+
+    // Add debug log to check final result
+    Object.entries(grouped).forEach(([dateKey, slots]) => {
+      console.log(`Month view - Date ${dateKey} has ${slots.length} timeslots`);
+    });
+
+    return grouped;
   }, [timeslots, activeClientTypes, now]);
 
   const currentMonth = currentDate.getMonth();
@@ -210,22 +184,9 @@ export default function MonthView({
           const dateStr = date.toISOString().split("T")[0];
 
           // Debug log for specific dates we saw issues with
-          if (dateStr === "2023-05-12" || dateStr === "2023-05-13") {
-            console.log(
-              `Checking date ${dateStr}:`,
-              timeslotsByDay[dateStr]?.length || 0,
-              "slots"
-            );
-          }
-
           const dayTimeslots = timeslotsByDay[dateStr] || [];
 
-          // For testing - print all dates with slots
-          if (dayTimeslots.length > 0) {
-            console.log(`Date ${dateStr} has ${dayTimeslots.length} slots`);
-          }
-
-          // We've already pre-filtered the timeslots, so just use them directly
+          // No additional filtering here - the slots have already been pre-filtered
           const activeTimeslots = dayTimeslots;
 
           // Count available slots by meeting type

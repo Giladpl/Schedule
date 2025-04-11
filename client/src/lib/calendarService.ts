@@ -397,16 +397,17 @@ export function groupTimeslotsByDay(
 
   console.log(`Grouping ${timeslots.length} timeslots by day`);
 
-  // Create a map of slot IDs to prevent duplicates on the same day
+  // Track which slots we've added to which days to avoid duplicates
   const slotsByDay = new Map<string, Set<number>>();
 
-  // First, let's ensure all timeslots are actually available
+  // First, ensure we're only dealing with available timeslots
   const availableTimeslots = timeslots.filter(slot => slot.isAvailable);
 
   if (availableTimeslots.length < timeslots.length) {
     console.log(`Filtered out ${timeslots.length - availableTimeslots.length} unavailable timeslots`);
   }
 
+  // Process each timeslot
   availableTimeslots.forEach((timeslot) => {
     try {
       // Ensure timeslot has valid dates
@@ -418,10 +419,10 @@ export function groupTimeslotsByDay(
         return; // Skip this timeslot
       }
 
-      // Get the date as YYYY-MM-DD string
+      // Get the date key in YYYY-MM-DD format - consistent across the application
       const dateKey = startDate.toISOString().split('T')[0];
 
-      // Initialize tracking structures if not exist
+      // Initialize containers if needed
       if (!grouped[dateKey]) {
         grouped[dateKey] = [];
       }
@@ -430,55 +431,55 @@ export function groupTimeslotsByDay(
         slotsByDay.set(dateKey, new Set<number>());
       }
 
-      // Check if this slot ID is already added to this day
+      // Check if we already added this slot to the day
       const daySlotIds = slotsByDay.get(dateKey)!;
       if (!daySlotIds.has(timeslot.id)) {
-        // Add the timeslot to this date's array
+        // Add the timeslot to this day
         grouped[dateKey].push(timeslot);
         daySlotIds.add(timeslot.id);
+
+        // Debug the added timeslot
+        console.log(`Added timeslot ID=${timeslot.id} to date ${dateKey}, meeting types: ${timeslot.meetingTypes}`);
       }
 
-      // Handle multi-day events:
-      // If the event spans multiple days, we need to add it to each day
-      // Only do this for slots with a significant duration (more than 1 hour)
-      const durationMs = endDate.getTime() - startDate.getTime();
-      const durationHours = durationMs / (1000 * 60 * 60);
+      // Handle multi-day timeslots - only if they span multiple calendar days
+      const startDay = new Date(startDate);
+      startDay.setHours(0, 0, 0, 0);
 
-      // Only consider spanning days if duration is at least 1 hour
-      if (durationHours >= 1) {
-        const startDay = new Date(startDate);
-        startDay.setHours(0, 0, 0, 0);
+      const endDay = new Date(endDate);
+      endDay.setHours(0, 0, 0, 0);
 
-        const endDay = new Date(endDate);
-        endDay.setHours(0, 0, 0, 0);
+      // Only process multi-day logic if the event actually spans multiple days
+      if (endDay.getTime() > startDay.getTime()) {
+        let currentDay = new Date(startDay);
+        currentDay.setDate(currentDay.getDate() + 1); // Start with the next day
 
-        // If start and end are on different days, add timeslot to each day
-        if (endDay.getTime() > startDay.getTime()) {
-          let currentDay = new Date(startDay);
-          currentDay.setDate(currentDay.getDate() + 1); // Start with next day
+        // Iterate through the additional days
+        while (currentDay.getTime() <= endDay.getTime()) {
+          const currentDateKey = currentDay.toISOString().split('T')[0];
 
-          while (currentDay.getTime() <= endDay.getTime()) {
-            const currentDateKey = currentDay.toISOString().split('T')[0];
-
-            if (!grouped[currentDateKey]) {
-              grouped[currentDateKey] = [];
-            }
-
-            if (!slotsByDay.has(currentDateKey)) {
-              slotsByDay.set(currentDateKey, new Set<number>());
-            }
-
-            // Check if this slot ID is already added to this day
-            const currentDaySlotIds = slotsByDay.get(currentDateKey)!;
-            if (!currentDaySlotIds.has(timeslot.id)) {
-              // Add the same timeslot to this day
-              grouped[currentDateKey].push(timeslot);
-              currentDaySlotIds.add(timeslot.id);
-            }
-
-            // Move to next day
-            currentDay.setDate(currentDay.getDate() + 1);
+          // Setup containers if needed
+          if (!grouped[currentDateKey]) {
+            grouped[currentDateKey] = [];
           }
+
+          if (!slotsByDay.has(currentDateKey)) {
+            slotsByDay.set(currentDateKey, new Set<number>());
+          }
+
+          // Add the slot to this day if not already added
+          const currentDaySlotIds = slotsByDay.get(currentDateKey)!;
+          if (!currentDaySlotIds.has(timeslot.id)) {
+            // Add slot to this day too
+            grouped[currentDateKey].push(timeslot);
+            currentDaySlotIds.add(timeslot.id);
+
+            // Debug multi-day addition
+            console.log(`Added multi-day timeslot ID=${timeslot.id} to additional date ${currentDateKey}`);
+          }
+
+          // Move to next day
+          currentDay.setDate(currentDay.getDate() + 1);
         }
       }
     } catch (error) {
@@ -486,7 +487,7 @@ export function groupTimeslotsByDay(
     }
   });
 
-  // Log some debug info about the result
+  // Summarize the results for debugging
   const totalGroupedTimeslots = Object.values(grouped).flat().length;
   const dateKeys = Object.keys(grouped).sort();
 
@@ -494,18 +495,73 @@ export function groupTimeslotsByDay(
 
   // Log each date with its timeslot count
   dateKeys.forEach(dateKey => {
-    console.log(`Date ${dateKey}: ${grouped[dateKey].length} timeslots`);
+    const slots = grouped[dateKey];
+    console.log(`Date ${dateKey}: ${slots.length} timeslots`);
 
-    // Additional debug logs for problematic dates
-    if (dateKey === "2023-05-12" || dateKey === "2023-05-13") {
-      console.log(`Detailed timeslots for ${dateKey}:`);
-      grouped[dateKey].forEach((slot, i) => {
-        console.log(`  Slot ${i+1}: ID=${slot.id}, Time=${new Date(slot.startTime).toLocaleTimeString()}-${new Date(slot.endTime).toLocaleTimeString()}, Types=${slot.meetingTypes}`);
+    // List all the slot IDs for this date
+    const slotIds = slots.map(slot => slot.id).join(', ');
+    console.log(`  Slot IDs for ${dateKey}: ${slotIds}`);
+
+    // List meeting types available on this date
+    const meetingTypes = new Set<string>();
+    slots.forEach(slot => {
+      slot.meetingTypes.split(',').forEach(type => {
+        if (type.trim()) meetingTypes.add(type.trim());
       });
-    }
+    });
+    console.log(`  Meeting types for ${dateKey}: ${Array.from(meetingTypes).join(', ')}`);
   });
 
   return grouped;
+}
+
+/**
+ * Helper function to check if a timeslot should be shown based on filtering criteria.
+ * Used by both weekly and monthly views to ensure consistency.
+ */
+export function shouldShowTimeslot(
+  timeslot: Timeslot,
+  currentTime: Date,
+  activeClientTypes: string[] = ["all"]
+): boolean {
+  try {
+    // 1. Skip unavailable slots
+    if (!timeslot.isAvailable) {
+      return false;
+    }
+
+    // 2. Check client type match
+    const hasAllClientType = activeClientTypes.includes("all");
+    const clientTypeMatch =
+      hasAllClientType ||
+      timeslot.clientType === "all" ||
+      activeClientTypes.includes(timeslot.clientType) ||
+      (Array.isArray(timeslot.clientType) &&
+        timeslot.clientType.some((ct) => activeClientTypes.includes(ct)));
+
+    if (!clientTypeMatch) {
+      return false;
+    }
+
+    // 3. Skip slots with invalid dates
+    const startTime = new Date(timeslot.startTime);
+    const endTime = new Date(timeslot.endTime);
+
+    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+      console.error("Invalid date in timeslot:", timeslot);
+      return false;
+    }
+
+    // 4. Skip slots that are entirely in the past
+    if (endTime < currentTime) {
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Error checking if timeslot should be shown:", error, timeslot);
+    return false;
+  }
 }
 
 export function getTimeslotDuration(timeslot: Timeslot): number {
