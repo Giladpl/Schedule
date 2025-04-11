@@ -491,7 +491,7 @@ export function filterTimeslots(
   // IMPORTANT: We need to use the EXACT same logic that the server uses
   // This ensures both views show the same data
   let processedTimeslots = timeslots.map(slot => {
-    // 1. Make Saturday slots always available, like the server does
+    // Make Saturday slots always available, like the server does
     const startDate = new Date(slot.startTime);
     const isSaturday = startDate.getDay() === 6; // 6 is Saturday
 
@@ -523,7 +523,7 @@ export function filterTimeslots(
         return false;
       }
 
-      // 2. Check client type match
+      // 2. Check client type match - ALSO APPLY TO SATURDAY SLOTS
       const hasAllClientType = activeClientTypes.includes("all");
       const clientTypeMatch =
         hasAllClientType ||
@@ -558,40 +558,8 @@ export function filterTimeslots(
     }
   });
 
-  // Now, adjust the start times of slots that have already started but not ended
-  // This replicates server-side behavior we see in the logs:
-  // "[Debug] Adjusted timeslot (16): Original start=2025-04-11T11:00:00.000Z, New start=2025-04-11T13:45:00.000Z"
-  const adjustedSlots = filteredSlots.map(slot => {
-    const startTime = new Date(slot.startTime);
-    const endTime = new Date(slot.endTime);
-
-    if (startTime < currentTime && endTime > currentTime) {
-      // For slots that have started but not ended, adjust the start time to now + buffer
-      // The server rounds up to the next 15-minute boundary
-      const adjustedStart = new Date(currentTime);
-      adjustedStart.setMinutes(adjustedStart.getMinutes() + 15 - (adjustedStart.getMinutes() % 15));
-
-      console.log(`Adjusting slot ${slot.id}: Original start=${startTime.toISOString()}, New start=${adjustedStart.toISOString()}`);
-
-      // Calculate remaining time in minutes
-      const remainingTimeInMinutes = (endTime.getTime() - adjustedStart.getTime()) / (1000 * 60);
-
-      // Create a new slot with the adjusted start time
-      const newSlot: Timeslot = {
-        ...slot,
-        startTime: adjustedStart,
-        wasAdjusted: true,
-        remainingMinutes: remainingTimeInMinutes
-      };
-
-      return newSlot;
-    }
-
-    return slot;
-  });
-
-  console.log(`After filtering: ${adjustedSlots.length} timeslots remaining`);
-  return adjustedSlots;
+  console.log(`After filtering: ${filteredSlots.length} timeslots remaining`);
+  return filteredSlots;
 }
 
 /**
@@ -604,21 +572,16 @@ export function shouldShowTimeslot(
   activeClientTypes: string[] = ["all"]
 ): boolean {
   try {
-    // Special handling for Saturday slots
+    // Special handling for Saturday slots - keep them available but still apply client type filtering
     const startDate = new Date(timeslot.startTime);
     const isSaturday = startDate.getDay() === 6; // 6 is Saturday
 
-    // Saturday slots are always available
-    if (isSaturday) {
-      return true;
-    }
-
-    // 1. Skip unavailable slots
-    if (!timeslot.isAvailable) {
+    // 1. Skip unavailable slots (except Saturday slots)
+    if (!timeslot.isAvailable && !isSaturday) {
       return false;
     }
 
-    // 2. Check client type match
+    // 2. Check client type match - APPLIED TO ALL SLOTS INCLUDING SATURDAY SLOTS
     const hasAllClientType = activeClientTypes.includes("all");
     const clientTypeMatch =
       hasAllClientType ||

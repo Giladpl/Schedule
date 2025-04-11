@@ -309,10 +309,62 @@ export function BookingModal({
     startDate.getTime() < endDate.getTime() ? endDate : startDate;
 
   // Parse meeting types from the timeslot string
-  const availableMeetingTypes = timeslot.meetingTypes
+  const timeslotMeetingTypes = timeslot.meetingTypes
     .split(",")
     .map((type) => type.trim())
     .filter(Boolean);
+
+  // Filter meeting types based on client type (for all slots including Saturday slots)
+  const availableMeetingTypes = useMemo(() => {
+    // For "all" client type, show all meeting types from the timeslot
+    if (timeslot.clientType === "all" && activeClientType === "all") {
+      return timeslotMeetingTypes;
+    }
+
+    // Determine which client type to use
+    const effectiveClientType =
+      timeslot.clientType === "all" ? activeClientType : timeslot.clientType;
+
+    // Get allowed meeting types for this client type
+    const getAllowedMeetingTypes = (clientType: string): string[] => {
+      if (clientType === "all") return ["טלפון", "זום", "פגישה"];
+
+      if (clientData?.clients) {
+        // Try to find client by ID if it's a numeric string
+        if (!isNaN(Number(clientType))) {
+          const client = clientData.clients.find(
+            (c) => c.id === Number(clientType)
+          );
+          if (client && client.meetings) {
+            return Object.keys(client.meetings);
+          }
+        }
+
+        // Try to find client by type name
+        const client = clientData.clients.find((c) => c.type === clientType);
+        if (client && client.meetings) {
+          return Object.keys(client.meetings);
+        }
+      }
+
+      // Fallback for known client types
+      const fallbackAllowedTypes: Record<string, string[]> = {
+        "0": ["טלפון", "זום", "פגישה"], // לקוח חדש
+        "1": ["טלפון", "פגישה"], // פולי אחים
+        "2": ["טלפון", "זום"], // מדריכים+
+        "3": ["טלפון", "פגישה"], // מכירת עוגות
+        new_customer: ["טלפון", "זום", "פגישה"],
+      };
+
+      return fallbackAllowedTypes[clientType] || [];
+    };
+
+    // Get allowed meeting types for this client type
+    const allowedTypes = getAllowedMeetingTypes(effectiveClientType);
+
+    // Only keep meeting types that are both in the timeslot AND allowed for this client type
+    return timeslotMeetingTypes.filter((type) => allowedTypes.includes(type));
+  }, [timeslotMeetingTypes, timeslot.clientType, activeClientType, clientData]);
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
