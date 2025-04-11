@@ -815,13 +815,54 @@ export async function fetchAndProcessTimeslots(
 ): Promise<Timeslot[]> {
   console.log(`Fetching timeslots from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
-  // Single API call used by both weekly and monthly views
-  const timeslots = await fetchTimeslots(startDate, endDate, clientType, meetingType);
+  try {
+    // Format dates for API call
+    const formattedStartDate = startDate.toISOString();
+    const formattedEndDate = endDate.toISOString();
 
-  console.log(`Received ${timeslots.length} timeslots from API`);
+    // Build the API URL with client types parameter
+    let url = `/api/timeslots?start=${encodeURIComponent(
+      formattedStartDate
+    )}&end=${encodeURIComponent(formattedEndDate)}`;
 
-  // No additional client-side filtering - we trust the server's processing
-  // This ensures complete consistency between monthly and weekly views
+    // Add client type parameter if not "all"
+    if (clientType !== "all") {
+      url += `&type=${encodeURIComponent(clientType)}`;
+    }
 
-  return timeslots;
+    // Add meeting type parameter if not "all"
+    if (meetingType !== "all") {
+      url += `&meetingType=${encodeURIComponent(meetingType)}`;
+    }
+
+    console.log("Fetching timeslots from:", url);
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log(`Received ${data.length} timeslots from server with special handling preserved`);
+
+    // Log all the Saturday slots to verify that the server's special handling is preserved
+    const saturdaySlots = data.filter((slot: Timeslot) => {
+      const date = new Date(slot.startTime);
+      return date.getDay() === 6; // 6 = Saturday
+    });
+
+    if (saturdaySlots.length > 0) {
+      console.log(`Retrieved ${saturdaySlots.length} Saturday slots from the server:`);
+      saturdaySlots.forEach((slot: Timeslot) => {
+        console.log(`Saturday slot ID=${slot.id}: ${new Date(slot.startTime).toISOString()} - Available: ${slot.isAvailable}`);
+      });
+    } else {
+      console.log("No Saturday slots in the server response");
+    }
+
+    return data;
+  } catch (error) {
+    console.error("Error in fetchAndProcessTimeslots:", error);
+    throw error;
+  }
 }

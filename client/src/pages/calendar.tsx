@@ -1,7 +1,7 @@
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 
 import { BookingModal } from "@/components/calendar/BookingModal";
@@ -86,11 +86,15 @@ export default function Calendar() {
   // Calculate date ranges based on current date
   const weekDays = getWeekDays(currentDate);
 
-  // Calculate start and end dates for the current view
-  const startDate =
-    view === "week" ? startOfWeek(currentDate) : startOfMonth(currentDate);
-  const endDate =
-    view === "week" ? endOfWeek(currentDate) : endOfMonth(currentDate);
+  // IMPORTANT: Always fetch the entire month's data to ensure consistency
+  // This way both weekly and monthly views have access to the exact same data
+  const monthStart = startOfMonth(currentDate);
+  const monthEnd = endOfMonth(currentDate);
+
+  // These are just for display purposes
+  const displayStartDate =
+    view === "week" ? startOfWeek(currentDate) : monthStart;
+  const displayEndDate = view === "week" ? endOfWeek(currentDate) : monthEnd;
 
   // Fetch client data to match short codes to full client types
   const { data: clientData } = useQuery({
@@ -232,26 +236,25 @@ export default function Calendar() {
     console.log(`View mode changed to: ${newViewMode}`);
   };
 
-  // Fetch timeslots from API with the specified date range and client types
-  // IMPORTANT: Use the shared fetchAndProcessTimeslots function for both views
+  // Use the shared fetchAndProcessTimeslots function with consistent date parameters
   const {
     data: timeslots = [],
     isLoading,
     error: apiError,
   } = useQuery({
-    queryKey: ["timeslots", startDate, endDate, clientTypes, meetingTypes],
+    queryKey: ["timeslots", monthStart, monthEnd, clientTypes, meetingTypes],
     queryFn: async () => {
       console.log(
-        `Fetching timeslots for ${view} view from ${startDate.toISOString()} to ${endDate.toISOString()}`
+        `Fetching ALL timeslots for month from ${monthStart.toISOString()} to ${monthEnd.toISOString()}`
       );
       console.log(`Client types: ${clientTypes.join(", ")}`);
       console.log(`Meeting types: ${meetingTypes.join(", ")}`);
 
       try {
-        // Use the shared function for both weekly and monthly views
+        // Always fetch the entire month for both views
         return await fetchAndProcessTimeslots(
-          startDate,
-          endDate,
+          monthStart,
+          monthEnd,
           clientTypes.includes("all") ? "all" : clientTypes[0],
           meetingTypes.includes("all") ? "all" : meetingTypes[0]
         );
@@ -264,18 +267,53 @@ export default function Calendar() {
     refetchOnWindowFocus: false,
   });
 
-  console.log(`Received ${timeslots?.length || 0} timeslots for ${view} view`);
+  // Get timeslots for the current view (filter from already fetched data)
+  const currentViewTimeslots = useMemo(() => {
+    if (!timeslots || timeslots.length === 0) return [];
 
-  if (timeslots && timeslots.length > 0) {
+    if (view === "week") {
+      // Filter timeslots for the current week
+      const weekStart = startOfWeek(currentDate);
+      const weekEnd = endOfWeek(currentDate);
+
+      console.log(
+        `Filtering weekly timeslots from ${weekStart.toISOString()} to ${weekEnd.toISOString()}`
+      );
+
+      // The filtering logic is applied consistently to ALREADY FETCHED data
+      return timeslots.filter((slot) => {
+        const slotStart = new Date(slot.startTime);
+        const slotEnd = new Date(slot.endTime);
+
+        // Include if the slot starts during the week or ends during the week
+        return (
+          (slotStart >= weekStart && slotStart <= weekEnd) ||
+          (slotEnd >= weekStart && slotEnd <= weekEnd) ||
+          (slotStart <= weekStart && slotEnd >= weekEnd)
+        );
+      });
+    }
+
+    // For month view, return all timeslots
+    return timeslots;
+  }, [timeslots, view, currentDate]);
+
+  console.log(
+    `Using ${currentViewTimeslots.length} timeslots for ${view} view (from total ${timeslots.length})`
+  );
+
+  if (currentViewTimeslots.length > 0) {
     // Log the first few timeslots for debugging
     console.log(`Sample timeslots for ${view} view:`);
-    timeslots.slice(0, Math.min(2, timeslots.length)).forEach((slot, i) => {
-      console.log(
-        `Slot ${i}: ID=${slot.id}, Start=${new Date(
-          slot.startTime
-        ).toISOString()}, Types=${slot.meetingTypes}`
-      );
-    });
+    currentViewTimeslots
+      .slice(0, Math.min(2, currentViewTimeslots.length))
+      .forEach((slot, i) => {
+        console.log(
+          `Slot ${i}: ID=${slot.id}, Start=${new Date(
+            slot.startTime
+          ).toISOString()}, Types=${slot.meetingTypes}`
+        );
+      });
   }
 
   // Error handling for timeslots API
@@ -509,8 +547,8 @@ export default function Calendar() {
   return (
     <div className="h-full flex flex-col" dir="rtl">
       <CalendarHeader
-        currentViewStart={startDate}
-        currentViewEnd={endDate}
+        currentViewStart={displayStartDate}
+        currentViewEnd={displayEndDate}
         onPrevious={goToPreviousPeriod}
         onNext={goToNextPeriod}
         onToday={goToToday}
@@ -559,8 +597,8 @@ export default function Calendar() {
             </div>
           ) : view === "week" ? (
             <WeekView
-              startDate={startDate}
-              timeslots={timeslots}
+              startDate={displayStartDate}
+              timeslots={currentViewTimeslots}
               onTimeslotClick={handleSelectTimeslot}
               selectedMeetingTypes={meetingTypes}
               activeClientTypes={clientTypes}
@@ -569,7 +607,7 @@ export default function Calendar() {
           ) : (
             <MonthView
               currentDate={currentDate}
-              timeslots={timeslots}
+              timeslots={currentViewTimeslots}
               onSelectDate={handleSelectDate}
               activeClientTypes={clientTypes}
               viewMode={viewMode}
