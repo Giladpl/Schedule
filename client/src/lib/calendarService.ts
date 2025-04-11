@@ -397,6 +397,9 @@ export function groupTimeslotsByDay(
 
   console.log(`Grouping ${timeslots.length} timeslots by day`);
 
+  // Create a map of slot IDs to prevent duplicates on the same day
+  const slotsByDay = new Map<string, Set<number>>();
+
   // First, let's ensure all timeslots are actually available
   const availableTimeslots = timeslots.filter(slot => slot.isAvailable);
 
@@ -418,39 +421,64 @@ export function groupTimeslotsByDay(
       // Get the date as YYYY-MM-DD string
       const dateKey = startDate.toISOString().split('T')[0];
 
-      // Initialize array for this date if it doesn't exist
+      // Initialize tracking structures if not exist
       if (!grouped[dateKey]) {
         grouped[dateKey] = [];
       }
 
-      // Add the timeslot to this date's array
-      grouped[dateKey].push(timeslot);
+      if (!slotsByDay.has(dateKey)) {
+        slotsByDay.set(dateKey, new Set<number>());
+      }
 
-      // Check if timeslot spans multiple days
-      // This is important for long events that need to appear on multiple days in month view
-      const startDay = new Date(startDate);
-      startDay.setHours(0, 0, 0, 0);
+      // Check if this slot ID is already added to this day
+      const daySlotIds = slotsByDay.get(dateKey)!;
+      if (!daySlotIds.has(timeslot.id)) {
+        // Add the timeslot to this date's array
+        grouped[dateKey].push(timeslot);
+        daySlotIds.add(timeslot.id);
+      }
 
-      const endDay = new Date(endDate);
-      endDay.setHours(0, 0, 0, 0);
+      // Handle multi-day events:
+      // If the event spans multiple days, we need to add it to each day
+      // Only do this for slots with a significant duration (more than 1 hour)
+      const durationMs = endDate.getTime() - startDate.getTime();
+      const durationHours = durationMs / (1000 * 60 * 60);
 
-      // If start and end are on different days, add timeslot to each day
-      if (endDay.getTime() > startDay.getTime()) {
-        let currentDay = new Date(startDay);
-        currentDay.setDate(currentDay.getDate() + 1); // Start with next day
+      // Only consider spanning days if duration is at least 1 hour
+      if (durationHours >= 1) {
+        const startDay = new Date(startDate);
+        startDay.setHours(0, 0, 0, 0);
 
-        while (currentDay.getTime() <= endDay.getTime()) {
-          const currentDateKey = currentDay.toISOString().split('T')[0];
+        const endDay = new Date(endDate);
+        endDay.setHours(0, 0, 0, 0);
 
-          if (!grouped[currentDateKey]) {
-            grouped[currentDateKey] = [];
+        // If start and end are on different days, add timeslot to each day
+        if (endDay.getTime() > startDay.getTime()) {
+          let currentDay = new Date(startDay);
+          currentDay.setDate(currentDay.getDate() + 1); // Start with next day
+
+          while (currentDay.getTime() <= endDay.getTime()) {
+            const currentDateKey = currentDay.toISOString().split('T')[0];
+
+            if (!grouped[currentDateKey]) {
+              grouped[currentDateKey] = [];
+            }
+
+            if (!slotsByDay.has(currentDateKey)) {
+              slotsByDay.set(currentDateKey, new Set<number>());
+            }
+
+            // Check if this slot ID is already added to this day
+            const currentDaySlotIds = slotsByDay.get(currentDateKey)!;
+            if (!currentDaySlotIds.has(timeslot.id)) {
+              // Add the same timeslot to this day
+              grouped[currentDateKey].push(timeslot);
+              currentDaySlotIds.add(timeslot.id);
+            }
+
+            // Move to next day
+            currentDay.setDate(currentDay.getDate() + 1);
           }
-
-          // Add the same timeslot to this day
-          grouped[currentDateKey].push(timeslot);
-
-          // Move to next day
-          currentDay.setDate(currentDay.getDate() + 1);
         }
       }
     } catch (error) {
@@ -460,13 +488,21 @@ export function groupTimeslotsByDay(
 
   // Log some debug info about the result
   const totalGroupedTimeslots = Object.values(grouped).flat().length;
-  const dateKeys = Object.keys(grouped);
+  const dateKeys = Object.keys(grouped).sort();
 
   console.log(`Grouped ${availableTimeslots.length} timeslots into ${dateKeys.length} days (${totalGroupedTimeslots} total entries)`);
 
   // Log each date with its timeslot count
   dateKeys.forEach(dateKey => {
     console.log(`Date ${dateKey}: ${grouped[dateKey].length} timeslots`);
+
+    // Additional debug logs for problematic dates
+    if (dateKey === "2023-05-12" || dateKey === "2023-05-13") {
+      console.log(`Detailed timeslots for ${dateKey}:`);
+      grouped[dateKey].forEach((slot, i) => {
+        console.log(`  Slot ${i+1}: ID=${slot.id}, Time=${new Date(slot.startTime).toLocaleTimeString()}-${new Date(slot.endTime).toLocaleTimeString()}, Types=${slot.meetingTypes}`);
+      });
+    }
   });
 
   return grouped;

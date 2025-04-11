@@ -45,34 +45,80 @@ export default function MonthView({
       `Organizing ${timeslots.length} timeslots by day for month view`
     );
 
+    // Log a sample of timeslots to debug
+    if (timeslots.length > 0) {
+      console.log(
+        `Sample first timeslot: ${JSON.stringify({
+          id: timeslots[0].id,
+          startTime: timeslots[0].startTime,
+          endTime: timeslots[0].endTime,
+          isAvailable: timeslots[0].isAvailable,
+          meetingTypes: timeslots[0].meetingTypes,
+          clientType: timeslots[0].clientType,
+        })}`
+      );
+    }
+
     // Use strict timeslot filtering before grouping to ensure consistency
     const validTimeslots = timeslots.filter((slot) => {
-      // Ensure the slot is available
-      if (!slot.isAvailable) return false;
+      try {
+        // 1. Ensure the slot is available
+        if (!slot.isAvailable) {
+          return false;
+        }
 
-      // Check for client type match
-      const hasAllClientType = activeClientTypes.includes("all");
-      const clientTypeMatch =
-        hasAllClientType ||
-        slot.clientType === "all" ||
-        activeClientTypes.includes(slot.clientType) ||
-        (Array.isArray(slot.clientType) &&
-          slot.clientType.some((ct) => activeClientTypes.includes(ct)));
+        // 2. Check for client type match - use exact same logic as in WeekView
+        const hasAllClientType = activeClientTypes.includes("all");
+        const clientTypeMatch =
+          hasAllClientType ||
+          slot.clientType === "all" ||
+          activeClientTypes.includes(slot.clientType) ||
+          (Array.isArray(slot.clientType) &&
+            slot.clientType.some((ct) => activeClientTypes.includes(ct)));
 
-      if (!clientTypeMatch) return false;
+        if (!clientTypeMatch) {
+          return false;
+        }
 
-      // Check if the timeslot is in the past
-      const startTime = new Date(slot.startTime);
-      if (startTime < now && !isSameDay(startTime, now)) {
+        // 3. Ensure dates are valid
+        const startTime = new Date(slot.startTime);
+        const endTime = new Date(slot.endTime);
+
+        if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+          console.error("Invalid date in timeslot:", slot);
+          return false;
+        }
+
+        // 4. Check if the timeslot is in the past
+        if (startTime < now && !isSameDay(startTime, now)) {
+          return false;
+        }
+
+        // For today, check if the slot hasn't ended yet
+        if (isSameDay(startTime, now) && endTime < now) {
+          return false;
+        }
+
+        return true;
+      } catch (error) {
+        console.error("Error filtering timeslot:", error, slot);
         return false;
       }
-
-      return true;
     });
 
     console.log(
       `After pre-filtering: ${validTimeslots.length} valid timeslots for month view`
     );
+
+    // Log all valid dates with slots
+    const validDates = new Set<string>();
+    validTimeslots.forEach((slot) => {
+      const date = new Date(slot.startTime);
+      validDates.add(date.toISOString().split("T")[0]);
+    });
+
+    console.log(`Valid dates with slots: ${Array.from(validDates).join(", ")}`);
+
     return groupTimeslotsByDay(validTimeslots);
   }, [timeslots, activeClientTypes, now]);
 
@@ -162,19 +208,25 @@ export default function MonthView({
           const isCurrentMonth = date.getMonth() === currentMonth;
           const isToday = isSameDay(date, now);
           const dateStr = date.toISOString().split("T")[0];
+
+          // Debug log for specific dates we saw issues with
+          if (dateStr === "2023-05-12" || dateStr === "2023-05-13") {
+            console.log(
+              `Checking date ${dateStr}:`,
+              timeslotsByDay[dateStr]?.length || 0,
+              "slots"
+            );
+          }
+
           const dayTimeslots = timeslotsByDay[dateStr] || [];
 
-          // We've already pre-filtered the timeslots, so just use them directly
-          const filteredTimeslots = dayTimeslots;
+          // For testing - print all dates with slots
+          if (dayTimeslots.length > 0) {
+            console.log(`Date ${dateStr} has ${dayTimeslots.length} slots`);
+          }
 
-          // Skip further filtering since we did it earlier
-          // Just ensure slots for the current day are not in the past
-          const activeTimeslots = isToday
-            ? filteredTimeslots.filter((slot) => {
-                const startTime = new Date(slot.startTime);
-                return startTime >= now;
-              })
-            : filteredTimeslots;
+          // We've already pre-filtered the timeslots, so just use them directly
+          const activeTimeslots = dayTimeslots;
 
           // Count available slots by meeting type
           const meetingTypeCounts: Record<string, number> = {};
