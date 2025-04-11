@@ -1,7 +1,7 @@
 import {
+  filterTimeslots,
   getClientTypeDisplayName,
   groupTimeslotsByDay,
-  shouldShowTimeslot,
 } from "@/lib/calendarService";
 import { getNowInIsrael } from "@/lib/timeUtils";
 import { getDatesInMonth, isSameDay } from "@/lib/utils";
@@ -42,60 +42,53 @@ export default function MonthView({
 
   // Group timeslots by day in useMemo to improve performance - Match WeekView logic exactly
   const timeslotsByDay = useMemo(() => {
-    console.log(
-      `Organizing ${timeslots.length} timeslots by day for month view`
-    );
+    console.log(`Monthly view processing ${timeslots.length} timeslots`);
 
-    // IMPORTANT: Log the original timeslots that come from the API for debugging
-    if (timeslots.length > 0) {
-      const sampleSlots = timeslots.slice(0, Math.min(3, timeslots.length));
-      sampleSlots.forEach((slot, i) => {
-        console.log(
-          `Original API timeslot ${i}: ID=${slot.id}, Start=${new Date(
-            slot.startTime
-          ).toISOString()}, End=${new Date(
-            slot.endTime
-          ).toISOString()}, Types=${slot.meetingTypes}, Available=${
-            slot.isAvailable
-          }`
-        );
-      });
-    }
-
-    // Use the shared helper function to consistently filter timeslots
-    // This MUST match WeekView's filtering exactly
-    const validTimeslots = timeslots.filter((slot) =>
-      shouldShowTimeslot(slot, now, activeClientTypes)
+    // IMPORTANT: Use the same filterTimeslots function that WeekView uses for consistency
+    const filteredTimeslots = filterTimeslots(
+      timeslots,
+      now,
+      activeClientTypes
     );
 
     console.log(
-      `After pre-filtering: ${validTimeslots.length} valid timeslots for month view`
+      `MonthView: After filtering ${filteredTimeslots.length} timeslots remain`
     );
 
-    // Log the valid timeslots to check what we're passing to groupTimeslotsByDay
-    const validDates = new Set<string>();
-    validTimeslots.forEach((slot) => {
-      const dateStr = new Date(slot.startTime).toISOString().split("T")[0];
-      validDates.add(dateStr);
+    // Print all Saturday timeslots to ensure they're included
+    const saturdaySlots = filteredTimeslots.filter((slot) => {
+      const date = new Date(slot.startTime);
+      return date.getDay() === 6; // 6 = Saturday
+    });
 
-      // Print detailed logs for each valid timeslot
+    console.log(
+      `MonthView: Found ${saturdaySlots.length} Saturday slots after filtering`
+    );
+
+    saturdaySlots.forEach((slot) => {
       console.log(
-        `Valid timeslot: ID=${slot.id}, Date=${dateStr}, Types=${slot.meetingTypes}`
+        `MonthView Saturday slot: ID=${slot.id}, Start=${new Date(
+          slot.startTime
+        ).toISOString()}`
       );
     });
 
-    console.log(`Valid dates with slots: ${Array.from(validDates).join(", ")}`);
-
     // Now group the filtered timeslots by day
-    const grouped = groupTimeslotsByDay(validTimeslots);
+    const grouped = groupTimeslotsByDay(filteredTimeslots);
 
     // Add debug log to check final result
     Object.entries(grouped).forEach(([dateKey, slots]) => {
-      console.log(`Month view - Date ${dateKey} has ${slots.length} timeslots`);
+      console.log(`MonthView - Date ${dateKey} has ${slots.length} timeslots`);
 
-      // Print all slot IDs for each date to help debug
-      const slotIds = slots.map((s) => s.id).join(", ");
-      console.log(`Month view - Slot IDs for ${dateKey}: ${slotIds}`);
+      // Check if we have Saturday slots in the results
+      const dayDate = new Date(dateKey);
+      const isSaturday = dayDate.getDay() === 6;
+
+      if (isSaturday) {
+        console.log(`MonthView: Saturday ${dateKey} has ${slots.length} slots`);
+        const slotIds = slots.map((s) => s.id).join(", ");
+        console.log(`MonthView: Saturday slot IDs: ${slotIds}`);
+      }
     });
 
     return grouped;
@@ -188,7 +181,7 @@ export default function MonthView({
           const isToday = isSameDay(date, now);
           const dateStr = date.toISOString().split("T")[0];
 
-          // Get timeslots for this day - these have ALREADY been filtered by shouldShowTimeslot
+          // Get timeslots for this day - these have ALREADY been filtered by filterTimeslots
           const dayTimeslots = timeslotsByDay[dateStr] || [];
 
           // DEBUG: Log available timeslots for important dates
@@ -238,16 +231,24 @@ export default function MonthView({
             );
           });
 
+          // Check if this is a Saturday (special handling)
+          const isSaturday = date.getDay() === 6;
+
           return (
             <div
               key={index}
               className={`calendar-cell h-32 border-b border-r border-[#dadce0] p-2 ${
                 !isCurrentMonth ? "bg-[#f8f9fa]" : ""
-              } ${
-                isToday ? "bg-[#e8f0fe]" : ""
+              } ${isToday ? "bg-[#e8f0fe]" : ""} ${
+                isSaturday ? "bg-blue-50" : ""
               } hover:bg-[#f8f9fa] cursor-pointer relative`}
               onClick={() => onSelectDate(date)}
             >
+              {/* Saturday indicator */}
+              {isSaturday && (
+                <div className="absolute right-0 top-0 w-0 h-0 border-t-8 border-r-8 border-t-transparent border-r-blue-200"></div>
+              )}
+
               {/* Current time indicator for today */}
               {isToday && (
                 <div className="absolute left-0 w-0.5 top-0 bottom-0 bg-[#ea4335]"></div>

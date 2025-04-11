@@ -466,6 +466,90 @@ export function groupTimeslotsByDay(
 }
 
 /**
+ * Shared function for filtering timeslots that works exactly the same for both weekly and monthly views.
+ * This ensures consistent behavior between different calendar views.
+ */
+export function filterTimeslots(
+  timeslots: Timeslot[],
+  currentTime: Date,
+  activeClientTypes: string[] = ["all"]
+): Timeslot[] {
+  console.log(`Filtering ${timeslots.length} timeslots`);
+
+  if (!timeslots || timeslots.length === 0) {
+    return [];
+  }
+
+  // First, ensure Saturday slots are always available
+  const processedTimeslots = timeslots.map(slot => {
+    const startDate = new Date(slot.startTime);
+    const isSaturday = startDate.getDay() === 6; // 6 is Saturday
+
+    if (isSaturday) {
+      // Clone the slot to avoid modifying the original
+      return { ...slot, isAvailable: true };
+    }
+
+    return slot;
+  });
+
+  // Log how many Saturday slots were made available
+  const saturdaySlots = processedTimeslots.filter(
+    slot => new Date(slot.startTime).getDay() === 6
+  );
+
+  if (saturdaySlots.length > 0) {
+    console.log(`Made ${saturdaySlots.length} Saturday slots available`);
+    saturdaySlots.forEach(slot => {
+      console.log(`Saturday slot ID=${slot.id}, Start=${new Date(slot.startTime).toLocaleTimeString()}, End=${new Date(slot.endTime).toLocaleTimeString()}`);
+    });
+  }
+
+  // Then apply the standard filtering criteria
+  return processedTimeslots.filter(slot => {
+    try {
+      // 1. Skip unavailable slots (except Saturdays, which were made available above)
+      if (!slot.isAvailable) {
+        return false;
+      }
+
+      // 2. Check client type match
+      const hasAllClientType = activeClientTypes.includes("all");
+      const clientTypeMatch =
+        hasAllClientType ||
+        slot.clientType === "all" ||
+        activeClientTypes.includes(slot.clientType) ||
+        (Array.isArray(slot.clientType) &&
+          slot.clientType.some((ct) => activeClientTypes.includes(ct)));
+
+      if (!clientTypeMatch) {
+        return false;
+      }
+
+      // 3. Skip slots with invalid dates
+      const startTime = new Date(slot.startTime);
+      const endTime = new Date(slot.endTime);
+
+      if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+        console.error("Invalid date in timeslot:", slot);
+        return false;
+      }
+
+      // 4. Skip slots that have completely ended
+      if (endTime < currentTime) {
+        console.log(`Filtering out past timeslot (ID=${slot.id}): ends at ${endTime.toISOString()}, current time is ${currentTime.toISOString()}`);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Error filtering timeslot:", error, slot);
+      return false;
+    }
+  });
+}
+
+/**
  * Helper function to check if a timeslot should be shown based on filtering criteria.
  * Used by both weekly and monthly views to ensure consistency.
  */
@@ -475,6 +559,15 @@ export function shouldShowTimeslot(
   activeClientTypes: string[] = ["all"]
 ): boolean {
   try {
+    // Special handling for Saturday slots
+    const startDate = new Date(timeslot.startTime);
+    const isSaturday = startDate.getDay() === 6; // 6 is Saturday
+
+    // Saturday slots are always available
+    if (isSaturday) {
+      return true;
+    }
+
     // 1. Skip unavailable slots
     if (!timeslot.isAvailable) {
       return false;
@@ -502,8 +595,7 @@ export function shouldShowTimeslot(
       return false;
     }
 
-    // 4. CRITICAL: Match weekly view's logic EXACTLY for past slots
-    // Weekly view shows slots if they END in the future, even if they START in the past
+    // 4. Skip slots that have completely ended
     if (endTime < currentTime) {
       console.log(`Filtering out past timeslot (ID=${timeslot.id}): ends at ${endTime.toISOString()}, current time is ${currentTime.toISOString()}`);
       return false;
