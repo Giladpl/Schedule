@@ -27,6 +27,8 @@ if (import.meta.env.DEV) {
   window.supabase = supabase;
   // @ts-ignore - Dynamically import setup script
   import("./setup-admin");
+  // @ts-ignore - Dynamically import debug script
+  import("./debug-admin");
 }
 
 // Create a simple logger for routes
