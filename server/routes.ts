@@ -1333,49 +1333,8 @@ async function syncWithGoogleCalendar(
       `[Debug] Retrieved ${events.length} events from Google Calendar`
     );
 
-    // Add better debug for events on Saturday
-    const saturdayEvents = events.filter((event) => {
-      if (!event.start?.dateTime) return false;
-      const eventDate = new Date(event.start.dateTime);
-      // In JavaScript, 6 = Saturday (0 = Sunday, 1 = Monday, etc.)
-      return eventDate.getDay() === 6;
-    });
-
-    console.log(
-      `[Debug] Found ${saturdayEvents.length} Saturday events in Google Calendar`
-    );
-
-    // Log details of Saturday events
-    if (saturdayEvents.length > 0) {
-      saturdayEvents.forEach((event, index) => {
-        console.log(`[Debug] Saturday event #${index + 1}: ${event.summary}`);
-        console.log(
-          `  Start: ${new Date(event.start!.dateTime!).toISOString()}`
-        );
-        console.log(`  End: ${new Date(event.end!.dateTime!).toISOString()}`);
-        console.log(`  Description: ${event.description || "No description"}`);
-        console.log(
-          `  Day of week: ${new Date(event.start!.dateTime!).getDay()}`
-        );
-      });
-    } else {
-      console.log("[Debug] No Saturday events found in Google Calendar");
-    }
-
-    // Log events by day of week for distribution analysis
-    const eventsByDayOfWeek = new Array(7).fill(0);
-    events.forEach((event) => {
-      if (event.start?.dateTime) {
-        const dayOfWeek = new Date(event.start.dateTime).getDay();
-        eventsByDayOfWeek[dayOfWeek]++;
-      }
-    });
-    console.log("[Debug] Events by day of week (0=Sunday, 6=Saturday):");
-    console.log(`[Debug] ${eventsByDayOfWeek.join(", ")}`);
-
     let convertedCount = 0;
     let errorCount = 0;
-    let saturdayConvertedCount = 0;
 
     // Process each event
     for (const event of events) {
@@ -1389,7 +1348,6 @@ async function syncWithGoogleCalendar(
 
         const eventDate = new Date(event.start.dateTime);
         const dayOfWeek = eventDate.getDay();
-        const isSaturday = dayOfWeek === 6;
 
         // Get client type and allowed meeting types from event description or summary
         const clientType = extractClientType(event);
@@ -1398,22 +1356,11 @@ async function syncWithGoogleCalendar(
         console.log(
           `[Debug] Processing event: ${
             event.summary
-          }, Client: ${clientType}, Meeting types: ${meetingTypes}, Day: ${
-            dayOfWeek === 0
-              ? "Sunday"
-              : dayOfWeek === 6
-              ? "Saturday"
-              : dayOfWeek
-          }`
+          }, Client: ${clientType}, Meeting types: ${meetingTypes}, Day: ${dayOfWeek}`
         );
 
         // All events are available by default
         const isAvailable = true;
-
-        // Save the log for Saturday events for debugging (backwards compatibility)
-        if (isSaturday) {
-          console.log(`[Debug] Saturday event - marked as available`);
-        }
 
         // Create a timeslot from the event
         const createdTimeslot = await storage.createTimeslot({
@@ -1426,19 +1373,6 @@ async function syncWithGoogleCalendar(
           parentEventId: null,
         });
 
-        if (isSaturday) {
-          console.log(
-            `[Debug] Successfully created Saturday timeslot: ID=${
-              createdTimeslot.id
-            }, Start=${new Date(
-              createdTimeslot.startTime
-            ).toISOString()}, Day=${new Date(
-              createdTimeslot.startTime
-            ).getDay()}, isAvailable=${createdTimeslot.isAvailable}`
-          );
-          saturdayConvertedCount++;
-        }
-
         convertedCount++;
       } catch (error) {
         console.error(`[Debug] Error processing event ${event.id}: ${error}`);
@@ -1447,75 +1381,42 @@ async function syncWithGoogleCalendar(
     }
 
     console.log(
-      `[Debug] Calendar sync completed. Total: ${convertedCount}, Saturday: ${saturdayConvertedCount}, Errors: ${errorCount}`
+      `[Debug] Calendar sync completed. Total: ${convertedCount}, Errors: ${errorCount}`
     );
 
     // Verify timeslots after sync
     const timeslots = await storage.getTimeslots();
     console.log(`[Debug] Total timeslots after sync: ${timeslots.length}`);
 
-    // Check how many Saturday timeslots were saved
-    const saturdayTimeslots = timeslots.filter((ts) => {
-      const date = new Date(ts.startTime);
-      return date.getDay() === 6;
-    });
-
-    console.log(
-      `[Debug] Saturday timeslots in storage: ${saturdayTimeslots.length}`
-    );
-
-    // Verify that all Saturday events were successfully converted to timeslots
-    if (saturdayEvents.length !== saturdayTimeslots.length) {
-      console.log(
-        `[Debug] WARNING: Discrepancy in Saturday events! Google had ${saturdayEvents.length} but storage has ${saturdayTimeslots.length}`
-      );
-
-      // Check which Saturday events might be missing
-      if (saturdayEvents.length > 0 && saturdayTimeslots.length > 0) {
-        console.log("[Debug] Comparing Saturday events to timeslots:");
-
-        // Check if each Google event has a corresponding timeslot
-        saturdayEvents.forEach((event, index) => {
-          if (!event.start?.dateTime) return;
-
-          const eventStartTime = new Date(event.start.dateTime).toISOString();
-          const foundTimeslot = saturdayTimeslots.find(
-            (ts) => new Date(ts.startTime).toISOString() === eventStartTime
-          );
-
-          if (!foundTimeslot) {
-            console.log(
-              `[Debug] Saturday event not found in timeslots: ${event.summary}, Start=${eventStartTime}`
-            );
-          }
-        });
-      }
-    }
-
-    if (saturdayTimeslots.length > 0) {
-      console.log(
-        `[Debug] First Saturday timeslot: ${JSON.stringify(
-          saturdayTimeslots[0]
-        )}`
-      );
-
-      // Log all Saturday timeslots for verification
-      saturdayTimeslots.forEach((ts, index) => {
-        console.log(
-          `[Debug] Saturday timeslot #${index + 1}: ID=${
-            ts.id
-          }, Start=${new Date(ts.startTime).toISOString()}, Day=${new Date(
-            ts.startTime
-          ).getDay()}`
-        );
-      });
-    } else {
-      console.log(`[Debug] No Saturday timeslots found in storage after sync`);
-    }
-
     if (timeslots.length > 0) {
-      const firstTimeslot = timeslots[0];
-      console.log(`[Debug] First timeslot: ${JSON.stringify(firstTimeslot)}`);
+      // Log some sample timeslots for verification
+      const sampleTimeslots = timeslots.slice(0, Math.min(3, timeslots.length));
+      sampleTimeslots.forEach((ts, index) => {
+        console.log(`[Debug] Sample timeslot ${index}: {`);
+        console.log(`  id: ${ts.id},`);
+        console.log(`  startTime: '${ts.startTime}',`);
+        console.log(`  endTime: '${ts.endTime}',`);
+        console.log(`  clientType: '${ts.clientType}',`);
+        console.log(`  meetingTypes: '${ts.meetingTypes}',`);
+        console.log(`  isAvailable: ${ts.isAvailable}`);
+        console.log(`}`);
+      });
+    }
+
+    console.log(`[Debug] After sync: ${timeslots.length} timeslots in storage`);
+
+    // Log some general statistics
+    const availableTimeslots = timeslots.filter(ts => ts.isAvailable);
+    if (availableTimeslots.length > 0) {
+      const earliestAvailableSlot = availableTimeslots.reduce((earliest, current) => {
+        return new Date(current.startTime) < new Date(earliest.startTime) ? current : earliest;
+      }, availableTimeslots[0]);
+
+      const latestAvailableSlot = availableTimeslots.reduce((latest, current) => {
+        return new Date(current.endTime) > new Date(latest.endTime) ? current : latest;
+      }, availableTimeslots[0]);
+
+      console.log(`[Debug] Available timeslots from ${new Date(earliestAvailableSlot.startTime).toISOString()} to ${new Date(latestAvailableSlot.endTime).toISOString()}`);
     }
   } catch (error) {
     console.error("[Debug] Error in syncWithGoogleCalendar:", error);
@@ -1676,16 +1577,6 @@ function extractClientType(event: calendar_v3.Schema$Event): string {
 // Helper function to extract meeting types from event
 function extractMeetingTypes(event: calendar_v3.Schema$Event): string {
   const meetingTypes: string[] = [];
-
-  // Check if it's a Saturday event for logging only
-  if (event.start?.dateTime) {
-    const eventDate = new Date(event.start.dateTime);
-    const isSaturday = eventDate.getDay() === 6;
-
-    if (isSaturday) {
-      console.log(`[Debug] Saturday event detected: ${event.summary}`);
-    }
-  }
 
   // Check in both description and summary
   const textToCheck = [event.description || "", event.summary || ""]

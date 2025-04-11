@@ -26,283 +26,50 @@ export async function fetchTimeslots(
   meetingType?: string
 ): Promise<Timeslot[]> {
   // Use a relative URL to leverage the Vite proxy, but make sure we're hitting the proper backend
-  const url = new URL("/api/timeslots", window.location.origin);
-  url.searchParams.append("start", startDate.toISOString());
-  url.searchParams.append("end", endDate.toISOString());
+  const controller = new AbortController();
 
-  if (clientType && clientType !== "all") {
-    url.searchParams.append("type", clientType);
-  }
-
-  if (meetingType && meetingType !== "all") {
-    url.searchParams.append("meetingType", meetingType);
-  }
-
-  console.log(`[Debug] Calendar making API request to: ${url.toString()}`);
-  console.log(
-    `[Debug] Date range ${startDate.toISOString()} to ${endDate.toISOString()} includes Saturday: ${checkDateRangeContainsSaturday(
-      startDate,
-      endDate
-    )}`
-  );
-  console.log(
-    `[Debug] Filters: clientType=${clientType || "all"}, meetingType=${
-      meetingType || "all"
-    }`
-  );
-
-  // Check date range for Saturday
-  const containsSaturday = checkDateRangeContainsSaturday(startDate, endDate);
-  console.log(`[Debug] Saturday dates in range:`);
-  const saturdayDates = getSaturdaysInRange(startDate, endDate);
-  saturdayDates.forEach((date) => {
-    console.log(`[Debug] Saturday: ${date.toISOString()}`);
-  });
-
-  // This ensures we don't include querystring directly in the URL
-  // Make a clean request string using the Vite proxy
-  const backendUrl = `${window.location.origin}/api/timeslots${url.search}`;
-  console.log(`[Debug] Fetching timeslots: ${backendUrl}`);
+  console.log(`Fetching timeslots: ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
   try {
-    // Create an AbortController to timeout the request if it takes too long
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      console.log("[Debug] Fetch request timeout after 15 seconds");
-      controller.abort();
-    }, 15000);
+    // Format dates
+    const formattedStartDate = startDate.toISOString();
+    const formattedEndDate = endDate.toISOString();
 
+    // Build the URL with query parameters
+    const params = new URLSearchParams();
+    params.append("start", formattedStartDate);
+    params.append("end", formattedEndDate);
+
+    // Add client type parameter if provided
+    if (clientType) {
+      params.append("type", clientType);
+    }
+
+    // Add meeting type parameter if provided
+    if (meetingType) {
+      params.append("meetingType", meetingType);
+    }
+
+    const url = `/api/timeslots?${params.toString()}`;
+    console.log(`[Debug] Fetching timeslots from: ${url}`);
+
+    // Make the API request
     const response = await apiRequest<Timeslot[]>(
       "GET",
-      url.toString(),
+      url,
       undefined,
-      {
-        signal: controller.signal,
-      }
+      { signal: controller.signal }
     );
 
-    clearTimeout(timeoutId);
-
-    console.log(`[Debug] Received ${response.length} timeslots`);
-
-    // Check for Saturday timeslots in the response
-    const saturdayTimeslots = response.filter((slot) => {
-      const date = new Date(slot.startTime);
-      return date.getDay() === 6;
-    });
-
-    console.log(
-      `[Debug] Saturday timeslots in response: ${saturdayTimeslots.length}`
-    );
-
-    if (saturdayTimeslots.length > 0) {
-      console.log("[Debug] Saturday timeslots found in response:");
-      saturdayTimeslots.forEach((slot, i) => {
-        console.log(
-          `[Debug]   ${i + 1}. ${new Date(
-            slot.startTime
-          ).toISOString()} - ID: ${slot.id}`
-        );
-      });
-    } else if (containsSaturday) {
-      console.log(
-        "[Debug] No Saturday timeslots were returned despite Saturday being in the date range"
-      );
-
-      // Get all Saturdays in the requested range
-      const saturdaysInRange = getSaturdaysInRange(startDate, endDate);
-      console.log(
-        `[Debug] Found ${saturdaysInRange.length} Saturdays in date range`
-      );
-
-      // Enhanced WORKAROUND: If we don't get Saturday events but we know they should exist,
-      // try a direct API call with special Saturday-specific parameters
-      try {
-        console.log("[Debug] Trying direct Saturday timeslot request");
-
-        // For each Saturday in the range, try to fetch timeslots for just that day
-        let allSaturdayTimeslots: Timeslot[] = [];
-
-        for (const saturday of saturdaysInRange) {
-          // Create a start date at 00:00 and end date at 23:59:59 for just this Saturday
-          const saturdayStart = new Date(saturday);
-          saturdayStart.setHours(0, 0, 0, 0);
-
-          const saturdayEnd = new Date(saturday);
-          saturdayEnd.setHours(23, 59, 59, 999);
-
-          console.log(
-            `[Debug] Fetching timeslots specifically for Saturday: ${saturdayStart.toISOString()} to ${saturdayEnd.toISOString()}`
-          );
-
-          // First try the regular URL with the Vite proxy
-          const saturdayUrl = new URL("/api/timeslots", window.location.origin);
-          saturdayUrl.searchParams.append("start", saturdayStart.toISOString());
-          saturdayUrl.searchParams.append("end", saturdayEnd.toISOString());
-
-          try {
-            const saturdayResponse = await apiRequest<Timeslot[]>(
-              "GET",
-              saturdayUrl.toString(),
-              undefined,
-              { signal: controller.signal }
-            );
-
-            if (saturdayResponse && saturdayResponse.length > 0) {
-              console.log(
-                `[Debug] Found ${saturdayResponse.length} Saturday timeslots`
-              );
-              allSaturdayTimeslots = [
-                ...allSaturdayTimeslots,
-                ...saturdayResponse,
-              ];
-            }
-          } catch (satError) {
-            console.log(
-              `[Debug] Error fetching Saturday timeslots via proxy: ${satError}`
-            );
-
-            // If that fails, try direct backend call
-            try {
-              const directBackendUrl = "http://localhost:3000/api/timeslots";
-              const params = new URLSearchParams();
-              params.append("start", saturdayStart.toISOString());
-              params.append("end", saturdayEnd.toISOString());
-
-              const directResponse = await fetch(
-                `${directBackendUrl}?${params.toString()}`
-              );
-              if (directResponse.ok) {
-                const saturdayEvents = await directResponse.json();
-                if (saturdayEvents && saturdayEvents.length > 0) {
-                  console.log(
-                    `[Debug] Found ${saturdayEvents.length} Saturday events directly from backend`
-                  );
-                  allSaturdayTimeslots = [
-                    ...allSaturdayTimeslots,
-                    ...saturdayEvents,
-                  ];
-                }
-              }
-            } catch (directError) {
-              console.error(
-                "[Debug] Direct backend call for Saturday failed:",
-                directError
-              );
-            }
-          }
-        }
-
-        // Merge Saturday timeslots with regular response
-        if (allSaturdayTimeslots.length > 0) {
-          console.log(
-            `[Debug] Adding ${allSaturdayTimeslots.length} Saturday timeslots to response`
-          );
-
-          // Ensure we don't have duplicates
-          const existingIds = new Set(response.map((slot) => slot.id));
-          const newSaturdayTimeslots = allSaturdayTimeslots.filter(
-            (slot) => !existingIds.has(slot.id)
-          );
-
-          if (newSaturdayTimeslots.length > 0) {
-            console.log(
-              `[Debug] Adding ${newSaturdayTimeslots.length} new Saturday timeslots`
-            );
-            return [...response, ...newSaturdayTimeslots];
-          }
-        }
-      } catch (error) {
-        console.error("[Debug] Error in Saturday timeslot recovery:", error);
-      }
-    }
-
-    if (response.length === 0) {
-      console.log(
-        `[Debug] Empty timeslots response. Verify server is returning data for this date range.`
-      );
-
-      // If we have Saturday in the range but no results, try to sync again
-      if (containsSaturday) {
-        console.log(
-          "[Debug] Date range contains Saturday but no timeslots returned - consider re-syncing with Google Calendar"
-        );
-      }
-    } else {
-      console.log(`[Debug] First timeslot: ${JSON.stringify(response[0])}`);
-      console.log(
-        `[Debug] Date range in response: ${new Date(
-          response[0].startTime
-        ).toISOString()} to ${new Date(
-          response[response.length - 1].endTime
-        ).toISOString()}`
-      );
-
-      // Verify that the response includes all days in the date range
-      const daysInRange = Math.ceil(
-        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      const uniqueDays = new Set<string>();
-
-      response.forEach((slot) => {
-        const date = new Date(slot.startTime);
-        uniqueDays.add(
-          `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
-        );
-      });
-
-      console.log(
-        `[Debug] Date range covers ${daysInRange} days, response includes timeslots for ${uniqueDays.size} unique days`
-      );
-    }
+    console.log(`[Debug] Received ${response.length} timeslots from server`);
 
     return response;
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      console.error("[Debug] Fetch timeslots request timed out");
-      return []; // Return empty array on timeout
-    }
     console.error("[Debug] Error fetching timeslots:", error);
     throw error;
+  } finally {
+    controller.abort();
   }
-}
-
-// Helper function to check if date range contains Saturday
-function checkDateRangeContainsSaturday(
-  startDate: Date,
-  endDate: Date
-): boolean {
-  const dayMs = 24 * 60 * 60 * 1000;
-  let currentDate = new Date(startDate);
-  const endMs = endDate.getTime();
-
-  while (currentDate.getTime() <= endMs) {
-    if (currentDate.getDay() === 6) {
-      // 6 = Saturday
-      return true;
-    }
-    currentDate = new Date(currentDate.getTime() + dayMs);
-  }
-
-  return false;
-}
-
-// Helper function to get all Saturdays in a date range
-function getSaturdaysInRange(startDate: Date, endDate: Date): Date[] {
-  const saturdays: Date[] = [];
-  const dayMs = 24 * 60 * 60 * 1000;
-  let currentDate = new Date(startDate);
-  const endMs = endDate.getTime();
-
-  while (currentDate.getTime() <= endMs) {
-    if (currentDate.getDay() === 6) {
-      // 6 = Saturday
-      saturdays.push(new Date(currentDate));
-    }
-    currentDate = new Date(currentDate.getTime() + dayMs);
-  }
-
-  return saturdays;
 }
 
 export async function fetchTimeslotById(id: number): Promise<Timeslot> {
@@ -488,42 +255,15 @@ export function filterTimeslots(
     return [];
   }
 
-  // IMPORTANT: We need to use the EXACT same logic that the server uses
-  // This ensures both views show the same data
-  let processedTimeslots = timeslots.map(slot => {
-    // Make Saturday slots always available, like the server does
-    const startDate = new Date(slot.startTime);
-    const isSaturday = startDate.getDay() === 6; // 6 is Saturday
-
-    if (isSaturday) {
-      // Clone the slot to avoid modifying the original
-      return { ...slot, isAvailable: true };
-    }
-
-    return slot;
-  });
-
-  // Log how many Saturday slots were made available
-  const saturdaySlots = processedTimeslots.filter(
-    slot => new Date(slot.startTime).getDay() === 6
-  );
-
-  if (saturdaySlots.length > 0) {
-    console.log(`Made ${saturdaySlots.length} Saturday slots available`);
-    saturdaySlots.forEach(slot => {
-      console.log(`Saturday slot ID=${slot.id}, Start=${new Date(slot.startTime).toLocaleTimeString()}, End=${new Date(slot.endTime).toLocaleTimeString()}`);
-    });
-  }
-
-  // Then apply standard filtering
-  const filteredSlots = processedTimeslots.filter(slot => {
+  // Apply standard filtering without special Saturday handling
+  const filteredSlots = timeslots.filter(slot => {
     try {
-      // 1. Skip unavailable slots (except Saturdays, which were made available above)
+      // 1. Skip unavailable slots
       if (!slot.isAvailable) {
         return false;
       }
 
-      // 2. Check client type match - ALSO APPLY TO SATURDAY SLOTS
+      // 2. Check client type match
       const hasAllClientType = activeClientTypes.includes("all");
       const clientTypeMatch =
         hasAllClientType ||
@@ -572,16 +312,12 @@ export function shouldShowTimeslot(
   activeClientTypes: string[] = ["all"]
 ): boolean {
   try {
-    // Special handling for Saturday slots - keep them available but still apply client type filtering
-    const startDate = new Date(timeslot.startTime);
-    const isSaturday = startDate.getDay() === 6; // 6 is Saturday
-
-    // 1. Skip unavailable slots (except Saturday slots)
-    if (!timeslot.isAvailable && !isSaturday) {
+    // 1. Skip unavailable slots
+    if (!timeslot.isAvailable) {
       return false;
     }
 
-    // 2. Check client type match - APPLIED TO ALL SLOTS INCLUDING SATURDAY SLOTS
+    // 2. Check client type match
     const hasAllClientType = activeClientTypes.includes("all");
     const clientTypeMatch =
       hasAllClientType ||
@@ -823,22 +559,7 @@ export async function fetchAndProcessTimeslots(
     }
 
     const data = await response.json();
-    console.log(`Received ${data.length} timeslots from server with special handling preserved`);
-
-    // Log all the Saturday slots to verify that the server's special handling is preserved
-    const saturdaySlots = data.filter((slot: Timeslot) => {
-      const date = new Date(slot.startTime);
-      return date.getDay() === 6; // 6 = Saturday
-    });
-
-    if (saturdaySlots.length > 0) {
-      console.log(`Retrieved ${saturdaySlots.length} Saturday slots from the server:`);
-      saturdaySlots.forEach((slot: Timeslot) => {
-        console.log(`Saturday slot ID=${slot.id}: ${new Date(slot.startTime).toISOString()} - Available: ${slot.isAvailable}`);
-      });
-    } else {
-      console.log("No Saturday slots in the server response");
-    }
+    console.log(`Received ${data.length} timeslots from server`);
 
     return data;
   } catch (error) {

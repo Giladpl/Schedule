@@ -1,14 +1,14 @@
 import {
-  type Booking,
-  type ClientRule,
-  type InsertBooking,
-  type InsertClientRule,
-  type InsertMeetingType,
-  type InsertTimeslot,
-  type InsertUser,
-  type MeetingType,
-  type Timeslot,
-  type User,
+    type Booking,
+    type ClientRule,
+    type InsertBooking,
+    type InsertClientRule,
+    type InsertMeetingType,
+    type InsertTimeslot,
+    type InsertUser,
+    type MeetingType,
+    type Timeslot,
+    type User,
 } from "@shared/schema";
 
 // Extend the storage interface with CRUD methods
@@ -178,37 +178,6 @@ export class MemStorage implements IStorage {
         `[Debug] getTimeslotsByDateRange: ${startDate.toISOString()} to ${endDate.toISOString()}`
       );
 
-      // Check if the date range includes Saturday - improved logic
-      const startMs = startDate.getTime();
-      const endMs = endDate.getTime();
-      const dayDuration = 24 * 60 * 60 * 1000; // One day in milliseconds
-      let currentMs = startMs;
-      let hasSaturday = false;
-      const daysOfWeek: number[] = [];
-
-      while (currentMs <= endMs) {
-        const currentDate = new Date(currentMs);
-        const dayOfWeek = currentDate.getDay();
-        if (!daysOfWeek.includes(dayOfWeek)) {
-          daysOfWeek.push(dayOfWeek);
-        }
-        if (dayOfWeek === 6) {
-          // 6 = Saturday
-          hasSaturday = true;
-          console.log(
-            `[Debug] Saturday found in range: ${currentDate.toISOString()}`
-          );
-        }
-        currentMs += dayDuration;
-      }
-
-      console.log(
-        `[Debug] Date range includes these days of week: ${daysOfWeek.join(
-          ", "
-        )}`
-      );
-      console.log(`[Debug] Date range includes Saturday: ${hasSaturday}`);
-
       // Ensure timeslots is a Map
       if (!(this.timeslots instanceof Map)) {
         console.log(
@@ -220,24 +189,6 @@ export class MemStorage implements IStorage {
 
       const allTimeslots = Array.from(this.timeslots.values());
       console.log(`[Debug] Total timeslots in storage: ${allTimeslots.length}`);
-
-      // Check for Saturday timeslots in storage
-      const saturdayTimeslots = allTimeslots.filter((ts) => {
-        const date = new Date(ts.startTime);
-        return date.getDay() === 6;
-      });
-
-      console.log(
-        `[Debug] Saturday timeslots in storage: ${saturdayTimeslots.length}`
-      );
-
-      if (saturdayTimeslots.length > 0) {
-        console.log(
-          `[Debug] Sample Saturday timeslot: ${JSON.stringify(
-            saturdayTimeslots[0]
-          )}`
-        );
-      }
 
       // Get a few sample timeslots to see what's in storage
       const sampleTimeslots = allTimeslots.slice(
@@ -290,29 +241,9 @@ export class MemStorage implements IStorage {
 
         // A timeslot is in range if:
         // 1. Its day falls within the date range
-        // 2. For specific days like Saturday, this ensures proper inclusion
         const inRange =
           (slotStartDay >= rangeStartDay && slotStartDay <= rangeEndDay) || // Start day is in range
           (slotEndDay >= rangeStartDay && slotEndDay <= rangeEndDay); // End day is in range
-
-        // Log for debugging
-        const dayOfWeek = slotStartDate.getDay();
-        const dayNames = [
-          "יום ראשון",
-          "יום שני",
-          "יום שלישי",
-          "יום רביעי",
-          "יום חמישי",
-          "יום שישי",
-          "שבת",
-        ];
-
-        if (dayOfWeek === 6) {
-          // Still log Saturdays for backwards compatibility with existing debug code
-          console.log(
-            `[Debug] Saturday timeslot (${slotStartDate.toISOString()}) in range: ${inRange}`
-          );
-        }
 
         return inRange;
       });
@@ -321,45 +252,13 @@ export class MemStorage implements IStorage {
         `[Debug] Found ${dateMatchedTimeslots.length} timeslots matching date range before availability check`
       );
 
-      // Check for Saturday timeslots in date-matched results
-      const dateMatchedSaturdayTimeslots = dateMatchedTimeslots.filter((ts) => {
-        const date = new Date(ts.startTime);
-        return date.getDay() === 6;
-      });
-
-      console.log(
-        `[Debug] Saturday timeslots after date filter: ${dateMatchedSaturdayTimeslots.length}`
-      );
-
-      // Process Saturday timeslots to make them all available
-      if (hasSaturday && dateMatchedSaturdayTimeslots.length > 0) {
-        console.log(`[Debug] Forcing all Saturday timeslots to be available`);
-        dateMatchedSaturdayTimeslots.forEach((ts) => {
-          // Clone and modify the timeslot to ensure it is available
-          // This doesn't modify the original data in storage, only the returned data
-          ts.isAvailable = true;
-        });
-      }
-
-      // For non-Saturday events, apply availability filter
-      // For Saturday events, include them all (they were already made available above)
+      // Apply availability filter to all timeslots, treating all days the same
       const result = dateMatchedTimeslots.filter((timeslot) => {
-        const isSaturday = new Date(timeslot.startTime).getDay() === 6;
-        return isSaturday || timeslot.isAvailable;
+        return timeslot.isAvailable;
       });
 
       console.log(
         `[Debug] Returning ${result.length} timeslots within date range`
-      );
-
-      // Final check for Saturday timeslots in results - לוגים בלבד
-      const resultSaturdayTimeslots = result.filter((ts) => {
-        const date = new Date(ts.startTime);
-        return date.getDay() === 6;
-      });
-
-      console.log(
-        `[Debug] Saturday timeslots in final result: ${resultSaturdayTimeslots.length}`
       );
 
       return result;
