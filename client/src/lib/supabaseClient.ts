@@ -79,17 +79,36 @@ export async function isAdmin(user: any) {
     // First try directly checking the RLS function if available
     try {
       console.log("Trying direct RPC admin check...");
-      const { data: rpcData, error: rpcError } = await supabase.rpc('check_user_admin', {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('check_user_admin_by_id', {
         user_id: user.id
       });
 
       if (!rpcError && rpcData === true) {
         console.log("✅ User confirmed as admin via RPC");
         return true;
+      } else if (rpcError) {
+        console.log("RPC check_user_admin_by_id failed:", rpcError);
       }
     } catch (rpcErr) {
       console.log("RPC check not available or failed:", rpcErr);
       // Continue to standard check
+    }
+
+    // Try alternative check method
+    try {
+      console.log("Trying alternative admin check method...");
+      const { data: altData, error: altError } = await supabase.rpc('is_user_admin', {
+        uid: user.id
+      });
+
+      if (!altError && altData === true) {
+        console.log("✅ User confirmed as admin via alternative check");
+        return true;
+      } else if (altError) {
+        console.log("Alternative RPC check failed:", altError);
+      }
+    } catch (alternativeErr) {
+      console.log("Alternative check failed:", alternativeErr);
     }
 
     // Fetch user's role from profiles table with more verbose logging
@@ -130,23 +149,6 @@ export async function isAdmin(user: any) {
         } catch (createErr) {
           console.error("❌ Exception creating profile:", createErr);
         }
-      }
-
-      // For any error with profile check, try one more method before giving up
-      console.log("Trying alternative admin check method...");
-      try {
-        // Direct SQL query as a last resort
-        const { data: checkData, error: checkError } = await supabase
-          .rpc('is_user_admin', {
-            uid: user.id
-          });
-
-        if (!checkError && checkData === true) {
-          console.log("✅ User confirmed as admin via alternative check");
-          return true;
-        }
-      } catch (alternativeErr) {
-        console.log("Alternative check failed:", alternativeErr);
       }
 
       return false;
