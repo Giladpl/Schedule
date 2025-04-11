@@ -1,9 +1,9 @@
 import { Booking, ClientRuleWithDisplayName, Timeslot } from "@shared/schema";
 import { apiRequest } from "./queryClient";
 import {
-  formatDateInIsrael,
-  formatTimeInIsrael,
-  formatTimeRangeInIsrael,
+    formatDateInIsrael,
+    formatTimeInIsrael,
+    formatTimeRangeInIsrael,
 } from "./timeUtils";
 
 // Type for the booking form
@@ -390,16 +390,70 @@ export function groupTimeslotsByDay(
 ): Record<string, Timeslot[]> {
   const grouped: Record<string, Timeslot[]> = {};
 
+  if (!timeslots || timeslots.length === 0) {
+    console.log('No timeslots to group by day');
+    return grouped;
+  }
+
+  console.log(`Grouping ${timeslots.length} timeslots by day`);
+
   timeslots.forEach((timeslot) => {
-    const date = new Date(timeslot.startTime);
-    const dateKey = date.toISOString().split("T")[0];
+    try {
+      // Ensure timeslot has valid dates
+      const startDate = new Date(timeslot.startTime);
+      const endDate = new Date(timeslot.endTime);
 
-    if (!grouped[dateKey]) {
-      grouped[dateKey] = [];
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        console.error('Invalid date in timeslot:', timeslot);
+        return; // Skip this timeslot
+      }
+
+      // Get the date as YYYY-MM-DD string
+      const dateKey = startDate.toISOString().split('T')[0];
+
+      // Initialize array for this date if it doesn't exist
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = [];
+      }
+
+      // Add the timeslot to this date's array
+      grouped[dateKey].push(timeslot);
+
+      // Check if timeslot spans multiple days
+      // This is important for long events that need to appear on multiple days in month view
+      const startDay = new Date(startDate);
+      startDay.setHours(0, 0, 0, 0);
+
+      const endDay = new Date(endDate);
+      endDay.setHours(0, 0, 0, 0);
+
+      // If start and end are on different days, add timeslot to each day
+      if (endDay.getTime() > startDay.getTime()) {
+        let currentDay = new Date(startDay);
+        currentDay.setDate(currentDay.getDate() + 1); // Start with next day
+
+        while (currentDay.getTime() <= endDay.getTime()) {
+          const currentDateKey = currentDay.toISOString().split('T')[0];
+
+          if (!grouped[currentDateKey]) {
+            grouped[currentDateKey] = [];
+          }
+
+          // Add the same timeslot to this day
+          grouped[currentDateKey].push(timeslot);
+
+          // Move to next day
+          currentDay.setDate(currentDay.getDate() + 1);
+        }
+      }
+    } catch (error) {
+      console.error('Error processing timeslot in groupTimeslotsByDay:', error, timeslot);
     }
-
-    grouped[dateKey].push(timeslot);
   });
+
+  // Log some debug info about the result
+  const totalGroupedTimeslots = Object.values(grouped).flat().length;
+  console.log(`Grouped ${timeslots.length} timeslots into ${Object.keys(grouped).length} days (${totalGroupedTimeslots} total entries)`);
 
   return grouped;
 }
