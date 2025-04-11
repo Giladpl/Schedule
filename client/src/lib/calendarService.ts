@@ -1,4 +1,5 @@
 import { Booking, ClientRuleWithDisplayName, Timeslot } from "@shared/schema";
+import { endOfDay, startOfDay } from "date-fns";
 import { apiRequest } from "./queryClient";
 import {
     formatDateInIsrael,
@@ -401,6 +402,9 @@ export function groupTimeslotsByDay(
   // All filtering should be done before calling this function
   // This ensures consistency between monthly and weekly views
 
+  // First, list all timeslot IDs for debugging
+  console.log(`Timeslot IDs being grouped: ${timeslots.map(ts => ts.id).join(', ')}`);
+
   timeslots.forEach((timeslot) => {
     try {
       // Ensure timeslot has valid dates
@@ -412,8 +416,10 @@ export function groupTimeslotsByDay(
         return; // Skip this timeslot
       }
 
-      // Get the date key in YYYY-MM-DD format - consistent across the application
-      const dateKey = startDate.toISOString().split('T')[0];
+      // Get the date key in YYYY-MM-DD format - IMPORTANT: Use consistent method to format dates
+      // This is the source of the inconsistency with WeekView
+      const startDay = startOfDay(startDate);
+      const dateKey = startDay.toISOString().split('T')[0];
 
       // Initialize array if needed
       if (!grouped[dateKey]) {
@@ -425,19 +431,16 @@ export function groupTimeslotsByDay(
       console.log(`Added timeslot ID=${timeslot.id} to date ${dateKey}`);
 
       // Handle multi-day timeslots - only if they span multiple calendar days
-      const startDay = new Date(startDate);
-      startDay.setHours(0, 0, 0, 0);
-
-      const endDay = new Date(endDate);
-      endDay.setHours(0, 0, 0, 0);
+      const startDayTime = startDay.getTime();
+      const endDayTime = endOfDay(endDate).getTime();
 
       // Only process multi-day logic if the event actually spans multiple days
-      if (endDay.getTime() > startDay.getTime()) {
+      if (endDayTime > startDayTime + 24*60*60*1000) { // More than one day difference
         let currentDay = new Date(startDay);
         currentDay.setDate(currentDay.getDate() + 1); // Start with the next day
 
         // Iterate through the additional days
-        while (currentDay.getTime() <= endDay.getTime()) {
+        while (currentDay.getTime() <= endDayTime) {
           const currentDateKey = currentDay.toISOString().split('T')[0];
 
           // Setup containers if needed
@@ -461,6 +464,11 @@ export function groupTimeslotsByDay(
   // Summarize the results
   const totalGroupedTimeslots = Object.values(grouped).flat().length;
   console.log(`Grouped ${timeslots.length} timeslots into ${Object.keys(grouped).length} days (${totalGroupedTimeslots} total entries)`);
+
+  // Debug: Show each day and its timeslot IDs
+  Object.entries(grouped).forEach(([date, slots]) => {
+    console.log(`Day ${date} has timeslots: ${slots.map(s => s.id).join(', ')}`);
+  });
 
   return grouped;
 }

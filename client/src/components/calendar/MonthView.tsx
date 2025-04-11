@@ -1,10 +1,9 @@
 import {
-  filterTimeslots,
   getClientTypeDisplayName,
   groupTimeslotsByDay,
 } from "@/lib/calendarService";
 import { getNowInIsrael } from "@/lib/timeUtils";
-import { getDatesInMonth, isSameDay } from "@/lib/utils";
+import { getDatesInMonth, isSameDay, startOfDay } from "@/lib/utils";
 import { Timeslot } from "@shared/schema";
 import { Info } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -44,15 +43,12 @@ export default function MonthView({
   const timeslotsByDay = useMemo(() => {
     console.log(`Monthly view processing ${timeslots.length} timeslots`);
 
-    // IMPORTANT: Use the same filterTimeslots function that WeekView uses for consistency
-    const filteredTimeslots = filterTimeslots(
-      timeslots,
-      now,
-      activeClientTypes
-    );
+    // IMPORTANT: We now use the pre-filtered timeslots from the parent component
+    // No additional filtering needed - the filtering is already done in calendar.tsx
+    const filteredTimeslots = timeslots;
 
     console.log(
-      `MonthView: After filtering ${filteredTimeslots.length} timeslots remain`
+      `MonthView: Processing ${filteredTimeslots.length} timeslots from parent component`
     );
 
     // Print all Saturday timeslots to ensure they're included
@@ -62,7 +58,7 @@ export default function MonthView({
     });
 
     console.log(
-      `MonthView: Found ${saturdaySlots.length} Saturday slots after filtering`
+      `MonthView: Found ${saturdaySlots.length} Saturday slots in the provided timeslots`
     );
 
     saturdaySlots.forEach((slot) => {
@@ -73,7 +69,7 @@ export default function MonthView({
       );
     });
 
-    // Now group the filtered timeslots by day
+    // Now group the timeslots by day
     const grouped = groupTimeslotsByDay(filteredTimeslots);
 
     // Add debug log to check final result
@@ -92,7 +88,7 @@ export default function MonthView({
     });
 
     return grouped;
-  }, [timeslots, activeClientTypes, now]);
+  }, [timeslots, now]);
 
   const currentMonth = currentDate.getMonth();
 
@@ -179,7 +175,10 @@ export default function MonthView({
         {dates.map((date, index) => {
           const isCurrentMonth = date.getMonth() === currentMonth;
           const isToday = isSameDay(date, now);
-          const dateStr = date.toISOString().split("T")[0];
+
+          // IMPORTANT: This must match exactly how dates are formatted in groupTimeslotsByDay
+          const startDay = startOfDay(date);
+          const dateStr = startDay.toISOString().split("T")[0];
 
           // Get timeslots for this day - these have ALREADY been filtered by filterTimeslots
           const dayTimeslots = timeslotsByDay[dateStr] || [];
@@ -187,7 +186,11 @@ export default function MonthView({
           // DEBUG: Log available timeslots for important dates
           if (dayTimeslots.length > 0) {
             console.log(
-              `MonthView cell for ${dateStr} has ${dayTimeslots.length} timeslots`
+              `MonthView cell for ${dateStr} has ${
+                dayTimeslots.length
+              } timeslots (IDs: ${dayTimeslots
+                .map((slot) => slot.id)
+                .join(", ")})`
             );
             dayTimeslots.forEach((slot) => {
               console.log(

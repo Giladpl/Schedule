@@ -13,7 +13,6 @@ import WeekView from "@/components/calendar/WeekView";
 
 import {
   createBooking,
-  fetchAndProcessTimeslots,
   fetchClientData,
   getClientTypeDisplayName,
   syncCalendar,
@@ -21,13 +20,15 @@ import {
 import { getNowInIsrael } from "@/lib/timeUtils";
 import {
   addDays,
+  endOfDay,
   endOfMonth,
   endOfWeek,
   getWeekDays,
+  startOfDay,
   startOfMonth,
   startOfWeek,
 } from "@/lib/utils";
-import { bookingFormSchema, Timeslot } from "@shared/schema";
+import { Booking, bookingFormSchema, Timeslot } from "@shared/schema";
 import { z } from "zod";
 
 // Define the client interface based on the actual API response
@@ -86,15 +87,29 @@ export default function Calendar() {
   // Calculate date ranges based on current date
   const weekDays = getWeekDays(currentDate);
 
-  // IMPORTANT: Always fetch the entire month's data to ensure consistency
-  // This way both weekly and monthly views have access to the exact same data
-  const monthStart = startOfMonth(currentDate);
-  const monthEnd = endOfMonth(currentDate);
+  // Weekly view date range - we'll use this for BOTH views to ensure consistency
+  const weekStart = startOfDay(startOfWeek(currentDate));
+  const weekEnd = endOfDay(endOfWeek(currentDate));
+
+  // Monthly date ranges are only used for UI display, not for data fetching
+  const monthStart = startOfDay(startOfMonth(currentDate));
+  const monthEnd = endOfDay(endOfMonth(currentDate));
+
+  // CRITICAL: Always use the consistent date range for data fetching
+  // This ensures the server will apply the same filtering for both views
+  // We use a fixed 3-month range to ensure we get ALL timeslots regardless of view
+  // This is the key fix: the server filters by date range, so we need to request a wide enough range
+  const threePastMonths = new Date(currentDate);
+  threePastMonths.setMonth(currentDate.getMonth() - 3);
+  const threeFutureMonths = new Date(currentDate);
+  threeFutureMonths.setMonth(currentDate.getMonth() + 3);
+
+  const fetchStartDate = startOfDay(threePastMonths);
+  const fetchEndDate = endOfDay(threeFutureMonths);
 
   // These are just for display purposes
-  const displayStartDate =
-    view === "week" ? startOfWeek(currentDate) : monthStart;
-  const displayEndDate = view === "week" ? endOfWeek(currentDate) : monthEnd;
+  const displayStartDate = view === "week" ? weekStart : monthStart;
+  const displayEndDate = view === "week" ? weekEnd : monthEnd;
 
   // Fetch client data to match short codes to full client types
   const { data: clientData } = useQuery({
@@ -236,28 +251,77 @@ export default function Calendar() {
     console.log(`View mode changed to: ${newViewMode}`);
   };
 
-  // Use the shared fetchAndProcessTimeslots function with consistent date parameters
+  // Fetch timeslots from API with the WEEKLY date range for BOTH views
   const {
     data: timeslots = [],
     isLoading,
     error: apiError,
   } = useQuery({
-    queryKey: ["timeslots", monthStart, monthEnd, clientTypes, meetingTypes],
+    queryKey: [
+      "timeslots",
+      fetchStartDate,
+      fetchEndDate,
+      clientTypes,
+      meetingTypes,
+    ],
     queryFn: async () => {
       console.log(
-        `Fetching ALL timeslots for month from ${monthStart.toISOString()} to ${monthEnd.toISOString()}`
+        `Fetching timeslots using WIDE DATE RANGE (±3 months): ${fetchStartDate.toISOString()} to ${fetchEndDate.toISOString()}`
       );
       console.log(`Client types: ${clientTypes.join(", ")}`);
-      console.log(`Meeting types: ${meetingTypes.join(", ")}`);
 
       try {
-        // Always fetch the entire month for both views
-        return await fetchAndProcessTimeslots(
-          monthStart,
-          monthEnd,
-          clientTypes.includes("all") ? "all" : clientTypes[0],
-          meetingTypes.includes("all") ? "all" : meetingTypes[0]
-        );
+        // Format dates for API call - ALWAYS USING UNIFIED RANGE
+        const formattedStartDate = fetchStartDate.toISOString();
+        const formattedEndDate = fetchEndDate.toISOString();
+
+        // Build the API URL with client types parameter
+        let url = `/api/timeslots?start=${encodeURIComponent(
+          formattedStartDate
+        )}&end=${encodeURIComponent(formattedEndDate)}`;
+
+        // Add client type parameter if not "all"
+        if (!clientTypes.includes("all") && clientTypes.length > 0) {
+          const clientType = clientTypes[0];
+          url += `&type=${encodeURIComponent(clientType)}`;
+        }
+
+        // Add meeting type parameter if not "all"
+        if (!meetingTypes.includes("all") && meetingTypes.length > 0) {
+          const meetingType = meetingTypes[0];
+          url += `&meetingType=${encodeURIComponent(meetingType)}`;
+        }
+
+        console.log(`Actual API URL: ${url}`);
+
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log(`Received ${data.length} timeslots from server`);
+
+        // Log Saturday slots
+        const saturdaySlots = data.filter((slot: any) => {
+          const date = new Date(slot.startTime);
+          return date.getDay() === 6; // 6 = Saturday
+        });
+
+        if (saturdaySlots.length > 0) {
+          console.log(
+            `Successfully retrieved ${saturdaySlots.length} Saturday slots:`
+          );
+          saturdaySlots.forEach((slot: any) => {
+            console.log(
+              `Saturday slot ID=${slot.id}: ${new Date(
+                slot.startTime
+              ).toISOString()}`
+            );
+          });
+        }
+
+        return data;
       } catch (error) {
         console.error("Error fetching timeslots:", error);
         throw error;
@@ -268,34 +332,74 @@ export default function Calendar() {
   });
 
   // Get timeslots for the current view (filter from already fetched data)
+  // Since we're fetching a wide date range (±3 months), we need to apply
+  // precise client-side filtering to show only timeslots relevant to the current view
   const currentViewTimeslots = useMemo(() => {
     if (!timeslots || timeslots.length === 0) return [];
 
+    console.log(
+      `All timeslots IDs from API (±3 month range): ${timeslots
+        .map((ts: Timeslot) => ts.id)
+        .join(", ")}`
+    );
+
     if (view === "week") {
-      // Filter timeslots for the current week
-      const weekStart = startOfWeek(currentDate);
-      const weekEnd = endOfWeek(currentDate);
+      // Filter timeslots for the current week - Use proper date handling
+      const weekStart = startOfDay(startOfWeek(currentDate));
+      const weekEnd = endOfDay(endOfWeek(currentDate));
 
       console.log(
         `Filtering weekly timeslots from ${weekStart.toISOString()} to ${weekEnd.toISOString()}`
       );
 
       // The filtering logic is applied consistently to ALREADY FETCHED data
-      return timeslots.filter((slot) => {
+      const filteredForWeek = timeslots.filter((slot: Timeslot) => {
         const slotStart = new Date(slot.startTime);
         const slotEnd = new Date(slot.endTime);
 
-        // Include if the slot starts during the week or ends during the week
+        // Include if the slot starts during the week or ends during the week or spans the week
         return (
           (slotStart >= weekStart && slotStart <= weekEnd) ||
           (slotEnd >= weekStart && slotEnd <= weekEnd) ||
           (slotStart <= weekStart && slotEnd >= weekEnd)
         );
       });
-    }
 
-    // For month view, return all timeslots
-    return timeslots;
+      console.log(
+        `Weekly filtered timeslot IDs: ${filteredForWeek
+          .map((ts: Timeslot) => ts.id)
+          .join(", ")}`
+      );
+      return filteredForWeek;
+    } else {
+      // For month view, filter the timeslots to the current month
+      const monthStart = startOfDay(startOfMonth(currentDate));
+      const monthEnd = endOfDay(endOfMonth(currentDate));
+
+      console.log(
+        `Filtering monthly timeslots from ${monthStart.toISOString()} to ${monthEnd.toISOString()}`
+      );
+
+      // Apply similar filtering logic for month view
+      const filteredForMonth = timeslots.filter((slot: Timeslot) => {
+        const slotStart = new Date(slot.startTime);
+        const slotEnd = new Date(slot.endTime);
+
+        // Include if the slot starts during the month or ends during the month or spans the month
+        return (
+          (slotStart >= monthStart && slotStart <= monthEnd) ||
+          (slotEnd >= monthStart && slotEnd <= monthEnd) ||
+          (slotStart <= monthStart && slotEnd >= monthEnd)
+        );
+      });
+
+      console.log(
+        `Monthly filtered timeslot IDs: ${filteredForMonth
+          .map((ts: Timeslot) => ts.id)
+          .join(", ")}`
+      );
+      return filteredForMonth;
+    }
   }, [timeslots, view, currentDate]);
 
   console.log(
@@ -307,7 +411,7 @@ export default function Calendar() {
     console.log(`Sample timeslots for ${view} view:`);
     currentViewTimeslots
       .slice(0, Math.min(2, currentViewTimeslots.length))
-      .forEach((slot, i) => {
+      .forEach((slot: Timeslot, i: number) => {
         console.log(
           `Slot ${i}: ID=${slot.id}, Start=${new Date(
             slot.startTime
@@ -347,7 +451,7 @@ export default function Calendar() {
       // Refetch timeslots to update availability
       queryClient.invalidateQueries({ queryKey: ["timeslots"] });
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       console.error("Error creating booking:", error);
       toast({
         title: "Booking Error",
@@ -596,22 +700,40 @@ export default function Calendar() {
               <p className="text-[#5f6368]">Loading calendar...</p>
             </div>
           ) : view === "week" ? (
-            <WeekView
-              startDate={displayStartDate}
-              timeslots={currentViewTimeslots}
-              onTimeslotClick={handleSelectTimeslot}
-              selectedMeetingTypes={meetingTypes}
-              activeClientTypes={clientTypes}
-              viewMode={viewMode}
-            />
+            <>
+              {console.log(
+                `Rendering WeekView with ${currentViewTimeslots.length} timeslots`
+              )}
+              {currentViewTimeslots.length > 0 &&
+                console.log(
+                  `First WeekView timeslot ID: ${currentViewTimeslots[0].id}`
+                )}
+              <WeekView
+                startDate={displayStartDate}
+                timeslots={currentViewTimeslots}
+                onTimeslotClick={handleSelectTimeslot}
+                selectedMeetingTypes={meetingTypes}
+                activeClientTypes={clientTypes}
+                viewMode={viewMode}
+              />
+            </>
           ) : (
-            <MonthView
-              currentDate={currentDate}
-              timeslots={currentViewTimeslots}
-              onSelectDate={handleSelectDate}
-              activeClientTypes={clientTypes}
-              viewMode={viewMode}
-            />
+            <>
+              {console.log(
+                `Rendering MonthView with ${currentViewTimeslots.length} timeslots`
+              )}
+              {currentViewTimeslots.length > 0 &&
+                console.log(
+                  `First MonthView timeslot ID: ${currentViewTimeslots[0].id}`
+                )}
+              <MonthView
+                currentDate={currentDate}
+                timeslots={currentViewTimeslots}
+                onSelectDate={handleSelectDate}
+                activeClientTypes={clientTypes}
+                viewMode={viewMode}
+              />
+            </>
           )}
         </div>
       </div>

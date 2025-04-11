@@ -328,7 +328,7 @@ function ExpandableTimeslots({
                     onSelectTimeslot(timeslot);
                     setExpanded(false);
                   }}
-                  activeClientTypes={activeClientTypes}
+                  activeClientTypes={["all"]}
                 />
               </div>
             ))}
@@ -339,7 +339,7 @@ function ExpandableTimeslots({
   );
 }
 
-// Filter timeslots for the day
+// Filter timeslots for the day - ONLY BY DAY, no additional filtering
 const getTimeslotsForDay = (
   date: Date,
   timeslots: Timeslot[],
@@ -355,9 +355,7 @@ const getTimeslotsForDay = (
     `[Debug] getTimeslotsForDay for ${format(
       date,
       "yyyy-MM-dd"
-    )}, Meeting Types: ${meetingTypes?.join(",") || "all"}, Client Types: ${
-      clientTypes?.join(",") || "all"
-    }`
+    )} - NO ADDITIONAL FILTERING: using pre-filtered timeslots from parent component`
   );
 
   // Check for valid parameters
@@ -369,15 +367,6 @@ const getTimeslotsForDay = (
     return [];
   }
 
-  // Empty selection means "all" - this is crucial to fix the issue
-  if (!meetingTypes || meetingTypes.length === 0) {
-    meetingTypes = ["all"];
-  }
-
-  if (!clientTypes || clientTypes.length === 0) {
-    clientTypes = ["all"];
-  }
-
   // Get start and end of the day
   try {
     const dayStart = startOfDay(date);
@@ -387,7 +376,7 @@ const getTimeslotsForDay = (
       `[Debug] Day boundaries: ${dayStart.toISOString()} to ${dayEnd.toISOString()}`
     );
 
-    // First filter timeslots that fall within this day
+    // Filter timeslots that fall within this day - NO ADDITIONAL FILTERING
     let dayTimeslots = timeslots.filter((ts) => {
       const tsStart = new Date(ts.startTime);
       return isWithinInterval(tsStart, { start: dayStart, end: dayEnd });
@@ -400,36 +389,7 @@ const getTimeslotsForDay = (
       )}`
     );
 
-    const hasAllMeetingType = meetingTypes.includes("all");
-    const hasAllClientType = clientTypes.includes("all");
-
-    // No filtering if "all" is selected for both
-    if (hasAllMeetingType && hasAllClientType) {
-      return dayTimeslots;
-    }
-
-    // Apply OR logic filtering
-    return dayTimeslots.filter((slot) => {
-      // Client type match condition
-      const matchesClientType =
-        hasAllClientType ||
-        slot.clientType === "all" ||
-        (clientTypes && clientTypes.includes(slot.clientType));
-
-      // Meeting type match condition
-      let matchesMeetingType = hasAllMeetingType;
-      if (!hasAllMeetingType) {
-        const slotMeetingTypes = slot.meetingTypes
-          .split(",")
-          .map((t) => t.trim());
-        matchesMeetingType = slotMeetingTypes.some((type) =>
-          meetingTypes.includes(type)
-        );
-      }
-
-      // OR logic: show if it matches EITHER client type OR meeting type
-      return matchesClientType || matchesMeetingType;
-    });
+    return dayTimeslots;
   } catch (error) {
     console.error("Error in getTimeslotsForDay:", error);
     return [];
@@ -540,10 +500,10 @@ function DaySchedule({
     return getTimeslotsForDay(
       day,
       flatTimeslots,
-      meetingType ? [meetingType] : ["all"],
-      activeClientTypes.length > 0 ? activeClientTypes : ["all"]
+      ["all"], // Don't apply meeting type filter
+      ["all"] // Don't apply client type filter
     );
-  }, [flatTimeslots, day, meetingType, activeClientTypes]);
+  }, [flatTimeslots, day]);
 
   // Group timeslots by their exact start/end times
   const groupedByTime = useMemo(() => {
@@ -696,7 +656,7 @@ function DaySchedule({
                           top={`${startPercent}%`}
                           height={`${heightPercent}%`}
                           onSelectTimeslot={onSelectTimeslot}
-                          activeClientTypes={activeClientTypes}
+                          activeClientTypes={["all"]}
                           usePercentage={true}
                           showTimeLabels={showTimeLabels}
                         />
@@ -717,7 +677,7 @@ function DaySchedule({
                           <TimeSlot
                             timeslot={firstSlot}
                             onClick={() => onSelectTimeslot(firstSlot)}
-                            activeClientTypes={activeClientTypes}
+                            activeClientTypes={["all"]}
                           />
                         </div>
                       );
@@ -843,7 +803,7 @@ function DaySchedule({
                         top={`${startPercent}%`}
                         height={`${heightPercent}%`}
                         onSelectTimeslot={onSelectTimeslot}
-                        activeClientTypes={activeClientTypes}
+                        activeClientTypes={["all"]}
                         usePercentage={true}
                         showTimeLabels={showTimeLabels}
                       />
@@ -881,7 +841,7 @@ function DaySchedule({
                               timeslot={timeslot}
                               onClick={() => onSelectTimeslot(timeslot)}
                               className="h-full"
-                              activeClientTypes={activeClientTypes}
+                              activeClientTypes={["all"]}
                             />
                           </div>
                         ))}
@@ -905,7 +865,7 @@ function DaySchedule({
                       <TimeSlot
                         timeslot={firstSlot}
                         onClick={() => onSelectTimeslot(firstSlot)}
-                        activeClientTypes={activeClientTypes}
+                        activeClientTypes={["all"]}
                       />
                     </div>
                   );
@@ -994,140 +954,12 @@ export default function WeekView({
 
   // Filter timeslots based on selected meeting types
   const filteredTimeslots = useMemo(() => {
-    if (!timeslots || timeslots.length === 0) return [];
-
-    let filtered = timeslots;
-
-    // Empty selection means "all" - this is crucial to fix the issue
-    const actualSelectedMeetingTypes =
-      !selectedMeetingTypes || selectedMeetingTypes.length === 0
-        ? ["all"]
-        : selectedMeetingTypes;
-
-    const actualClientTypes =
-      !activeClientTypes || activeClientTypes.length === 0
-        ? ["all"]
-        : activeClientTypes;
-
-    const hasAllMeetingType = actualSelectedMeetingTypes.includes("all");
-    const hasAllClientType = actualClientTypes.includes("all");
-
-    // Skip filtering if "all" is selected for both filters
-    if (hasAllMeetingType && hasAllClientType) {
-      return filtered;
-    }
-
-    // First, we need to determine which meeting types are allowed for the selected client types
-    const allowedMeetingTypes = new Set<string>();
-
-    // If "all" is selected for client types, all meeting types are allowed
-    if (hasAllClientType) {
-      allowedMeetingTypes.add("טלפון");
-      allowedMeetingTypes.add("זום");
-      allowedMeetingTypes.add("פגישה");
-    } else {
-      // Otherwise, only include meeting types that are compatible with the selected client types
-      actualClientTypes.forEach((clientType) => {
-        // Import CLIENT_ALLOWED_MEETING_TYPES and use it here
-        // For now, hardcode the allowed meeting types
-        if (clientType === "0" || clientType === "new_customer") {
-          // לקוח חדש
-          allowedMeetingTypes.add("טלפון");
-          allowedMeetingTypes.add("זום");
-          allowedMeetingTypes.add("פגישה");
-        } else if (clientType === "1") {
-          // פולי אחים
-          allowedMeetingTypes.add("טלפון");
-          allowedMeetingTypes.add("פגישה");
-        } else if (clientType === "2") {
-          // מדריכים+
-          allowedMeetingTypes.add("טלפון");
-          allowedMeetingTypes.add("זום");
-        } else if (clientType === "3") {
-          // מכירת עוגות
-          allowedMeetingTypes.add("טלפון");
-          allowedMeetingTypes.add("פגישה");
-        }
-      });
-    }
-
+    // IMPORTANT: No additional filtering - use exactly what parent provides
     console.log(
-      `[Debug] Allowed meeting types: ${Array.from(allowedMeetingTypes).join(
-        ","
-      )}`
+      `WeekView: Using ${timeslots.length} timeslots from parent component (NO ADDITIONAL FILTERING)`
     );
-
-    // Filter by meeting types if specific meeting types are selected
-    if (!hasAllMeetingType) {
-      console.log(
-        `[Debug] Filtering by meeting types: ${actualSelectedMeetingTypes.join(
-          ","
-        )}`
-      );
-
-      filtered = filtered.filter((ts) => {
-        // Check if the timeslot has any of the selected meeting types (OR logic)
-        const meetingTypeList = ts.meetingTypes.split(",").map((t) => t.trim());
-        const hasSelectedType = meetingTypeList.some((type) =>
-          actualSelectedMeetingTypes.includes(type)
-        );
-
-        if (!hasSelectedType) {
-          console.log(
-            `[Debug] Excluding timeslot - no matching meeting type: ${ts.meetingTypes}`
-          );
-        }
-
-        return hasSelectedType;
-      });
-
-      console.log(
-        `[Debug] After meeting type filtering: ${filtered.length} timeslots remaining`
-      );
-    }
-
-    // Filter by client types if specific client types are selected
-    if (!hasAllClientType) {
-      console.log(
-        `[Debug] Filtering by client types: ${actualClientTypes.join(",")}`
-      );
-
-      filtered = filtered.filter((ts) => {
-        // First check if the timeslot is for the right client type
-        const clientTypeMatch =
-          ts.clientType === "all" ||
-          actualClientTypes.includes(ts.clientType) ||
-          (Array.isArray(ts.clientType) &&
-            ts.clientType.some((ct) => actualClientTypes.includes(ct)));
-
-        if (!clientTypeMatch) {
-          return false;
-        }
-
-        // Then check if any of the timeslot's meeting types are allowed for the selected client types
-        const meetingTypeList = ts.meetingTypes.split(",").map((t) => t.trim());
-        const hasAllowedMeetingType = meetingTypeList.some((type) =>
-          allowedMeetingTypes.has(type)
-        );
-
-        if (!hasAllowedMeetingType) {
-          console.log(
-            `[Debug] Excluding timeslot - no compatible meeting types: ${
-              ts.meetingTypes
-            } not in [${Array.from(allowedMeetingTypes).join(",")}]`
-          );
-        }
-
-        return hasAllowedMeetingType;
-      });
-
-      console.log(
-        `[Debug] After client type filtering: ${filtered.length} timeslots remaining`
-      );
-    }
-
-    return filtered;
-  }, [timeslots, selectedMeetingTypes, activeClientTypes]);
+    return timeslots;
+  }, [timeslots]);
 
   // Group timeslots by day
   const dayTimeslots = useMemo(() => {
@@ -1227,13 +1059,13 @@ export default function WeekView({
     };
   }, [hourLabels.length]);
 
-  // Generate timeslots for each day
+  // Generate timeslots for each day - IMPORTANT: No additional filtering
   const weekTimeslots = days.map((day) =>
     getTimeslotsForDay(
       day,
       timeslots,
-      selectedMeetingTypes,
-      activeClientTypes || ["all"]
+      ["all"], // Don't apply meeting type filter - use parent's pre-filtered data
+      ["all"] // Don't apply client type filter - use parent's pre-filtered data
     )
   );
 
@@ -1325,15 +1157,13 @@ export default function WeekView({
                 timeslots={dayTimeslots}
                 onSelectTimeslot={onTimeslotClick || (() => {})}
                 selectedDate={day}
-                activeClientTypes={activeClientTypes || ["all"]}
+                activeClientTypes={["all"]}
                 isAdmin={viewMode === "admin"}
-                meetingType={selectedMeetingTypes.join(",")}
+                meetingType="all"
                 cellHourHeight={globalHourHeight}
                 usePercentage={true}
                 isToday={isToday(day)}
-                showTimeLabels={
-                  false
-                } /* Add prop to disable time labels in day columns */
+                showTimeLabels={false}
               />
             );
           })}
