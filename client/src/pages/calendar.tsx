@@ -13,6 +13,7 @@ import WeekView from "@/components/calendar/WeekView";
 
 import {
   createBooking,
+  fetchAndProcessTimeslots,
   fetchClientData,
   getClientTypeDisplayName,
   syncCalendar,
@@ -232,6 +233,7 @@ export default function Calendar() {
   };
 
   // Fetch timeslots from API with the specified date range and client types
+  // IMPORTANT: Use the shared fetchAndProcessTimeslots function for both views
   const {
     data: timeslots = [],
     isLoading,
@@ -239,95 +241,63 @@ export default function Calendar() {
   } = useQuery({
     queryKey: ["timeslots", startDate, endDate, clientTypes, meetingTypes],
     queryFn: async () => {
+      console.log(
+        `Fetching timeslots for ${view} view from ${startDate.toISOString()} to ${endDate.toISOString()}`
+      );
+      console.log(`Client types: ${clientTypes.join(", ")}`);
+      console.log(`Meeting types: ${meetingTypes.join(", ")}`);
+
       try {
-        // Format dates for API call
-        const formattedStartDate = startDate.toISOString();
-        const formattedEndDate = endDate.toISOString();
-
-        // Build the API URL with client types parameter
-        let url = `/api/timeslots?start=${encodeURIComponent(
-          formattedStartDate
-        )}&end=${encodeURIComponent(formattedEndDate)}`;
-
-        // Check if "all" is included in client types
-        const hasAllClientType =
-          clientTypes.length === 0 || clientTypes.includes("all");
-        const hasAllMeetingType =
-          meetingTypes.length === 0 || meetingTypes.includes("all");
-
-        // For client type filtering, use the numeric IDs if available or text values
-        if (!hasAllClientType) {
-          // Gather type IDs and text values
-          const typeIds: string[] = [];
-          const typeNames: string[] = [];
-
-          clientTypes.forEach((value) => {
-            // Check if value is a numeric ID
-            if (!isNaN(parseInt(value))) {
-              typeIds.push(value);
-            } else {
-              typeNames.push(value);
-            }
-          });
-
-          // Add type IDs to URL
-          if (typeIds.length > 0) {
-            url += `&typeIds=${encodeURIComponent(typeIds.join(","))}`;
-          }
-
-          // Add full client type names if available
-          if (fullClientTypes.length > 0) {
-            url += `&types=${encodeURIComponent(fullClientTypes.join(","))}`;
-          }
-          // Otherwise use the text values from clientTypes
-          else if (typeNames.length > 0) {
-            url += `&types=${encodeURIComponent(typeNames.join(","))}`;
-          }
-        }
-
-        // Add meeting types parameter if not "all"
-        if (!hasAllMeetingType) {
-          url += `&meetingTypes=${encodeURIComponent(meetingTypes.join(","))}`;
-        }
-
-        console.log("Fetching timeslots from:", url);
-
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log(`Received ${data.length} timeslots`);
-        return data;
+        // Use the shared function for both weekly and monthly views
+        return await fetchAndProcessTimeslots(
+          startDate,
+          endDate,
+          clientTypes.includes("all") ? "all" : clientTypes[0],
+          meetingTypes.includes("all") ? "all" : meetingTypes[0]
+        );
       } catch (error) {
         console.error("Error fetching timeslots:", error);
         throw error;
       }
     },
-    staleTime: 300000, // 5 minutes
+    staleTime: 60000, // 1 minute
     refetchOnWindowFocus: false,
   });
 
-  // Error handling with renamed apiError variable
+  console.log(`Received ${timeslots?.length || 0} timeslots for ${view} view`);
+
+  if (timeslots && timeslots.length > 0) {
+    // Log the first few timeslots for debugging
+    console.log(`Sample timeslots for ${view} view:`);
+    timeslots.slice(0, Math.min(2, timeslots.length)).forEach((slot, i) => {
+      console.log(
+        `Slot ${i}: ID=${slot.id}, Start=${new Date(
+          slot.startTime
+        ).toISOString()}, Types=${slot.meetingTypes}`
+      );
+    });
+  }
+
+  // Error handling for timeslots API
   useEffect(() => {
     if (apiError) {
-      console.error("Error from React Query:", apiError);
+      console.error("API Error:", apiError);
       toast({
-        title: "Error Loading Calendar",
-        description:
-          "Failed to load timeslots. Please try refreshing the page.",
+        title: "Error",
+        description: "Failed to load timeslots. Please try again later.",
         variant: "destructive",
       });
     }
   }, [apiError, toast]);
 
-  // Booking mutations
+  // Loading state for booking form submission
   const { mutate, isPending: isBooking } = useMutation({
     mutationFn: createBooking,
-    onSuccess: (data) => {
+    onSuccess: (data: Booking) => {
+      // Close booking modal
       setBookingModalOpen(false);
-      // Extract only the necessary fields from the data to match the bookingDetails type
+
+      // Store booking details for confirmation
       setBookingDetails({
         name: data.name,
         email: data.email,

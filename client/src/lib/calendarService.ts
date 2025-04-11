@@ -802,3 +802,26 @@ export function getClientTypeDisplayName(clientType: string): string {
   // Return a display name or the original if no mapping exists
   return commonDisplayNames[clientType] || clientType;
 }
+
+/**
+ * Shared function to fetch and process timeslots for both weekly and monthly views.
+ * This ensures that both views use exactly the same data processing logic.
+ */
+export async function fetchAndProcessTimeslots(
+  startDate: Date,
+  endDate: Date,
+  clientType: string = "all",
+  meetingType: string = "all"
+): Promise<Timeslot[]> {
+  console.log(`Fetching timeslots from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+
+  // Single API call used by both weekly and monthly views
+  const timeslots = await fetchTimeslots(startDate, endDate, clientType, meetingType);
+
+  console.log(`Received ${timeslots.length} timeslots from API`);
+
+  // No additional client-side filtering - we trust the server's processing
+  // This ensures complete consistency between monthly and weekly views
+
+  return timeslots;
+}
