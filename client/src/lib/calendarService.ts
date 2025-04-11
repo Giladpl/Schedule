@@ -480,8 +480,10 @@ export function filterTimeslots(
     return [];
   }
 
-  // First, ensure Saturday slots are always available
-  const processedTimeslots = timeslots.map(slot => {
+  // IMPORTANT: We need to use the EXACT same logic that the server uses
+  // This ensures both views show the same data
+  let processedTimeslots = timeslots.map(slot => {
+    // 1. Make Saturday slots always available, like the server does
     const startDate = new Date(slot.startTime);
     const isSaturday = startDate.getDay() === 6; // 6 is Saturday
 
@@ -505,8 +507,8 @@ export function filterTimeslots(
     });
   }
 
-  // Then apply the standard filtering criteria
-  return processedTimeslots.filter(slot => {
+  // Then apply standard filtering
+  const filteredSlots = processedTimeslots.filter(slot => {
     try {
       // 1. Skip unavailable slots (except Saturdays, which were made available above)
       if (!slot.isAvailable) {
@@ -536,7 +538,7 @@ export function filterTimeslots(
       }
 
       // 4. Skip slots that have completely ended
-      if (endTime < currentTime) {
+      if (endTime <= currentTime) {
         console.log(`Filtering out past timeslot (ID=${slot.id}): ends at ${endTime.toISOString()}, current time is ${currentTime.toISOString()}`);
         return false;
       }
@@ -547,6 +549,36 @@ export function filterTimeslots(
       return false;
     }
   });
+
+  // Now, adjust the start times of slots that have already started but not ended
+  // This replicates server-side behavior we see in the logs:
+  // "[Debug] Adjusted timeslot (16): Original start=2025-04-11T11:00:00.000Z, New start=2025-04-11T13:45:00.000Z"
+  const adjustedSlots = filteredSlots.map(slot => {
+    const startTime = new Date(slot.startTime);
+    const endTime = new Date(slot.endTime);
+
+    if (startTime < currentTime && endTime > currentTime) {
+      // For slots that have started but not ended, adjust the start time to now + buffer
+      // The server seems to use a 15-minute buffer
+      const adjustedStart = new Date(currentTime);
+      adjustedStart.setMinutes(adjustedStart.getMinutes() + 15 - (adjustedStart.getMinutes() % 15));
+
+      console.log(`Adjusting slot ${slot.id}: Original start=${startTime.toISOString()}, New start=${adjustedStart.toISOString()}`);
+
+      // Create a new slot with the adjusted start time
+      const newSlot: Timeslot = {
+        ...slot,
+        startTime: adjustedStart
+      };
+
+      return newSlot;
+    }
+
+    return slot;
+  });
+
+  console.log(`After filtering: ${adjustedSlots.length} timeslots remaining`);
+  return adjustedSlots;
 }
 
 /**
