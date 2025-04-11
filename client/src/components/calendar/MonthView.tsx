@@ -44,8 +44,37 @@ export default function MonthView({
     console.log(
       `Organizing ${timeslots.length} timeslots by day for month view`
     );
-    return groupTimeslotsByDay(timeslots);
-  }, [timeslots]);
+
+    // Use strict timeslot filtering before grouping to ensure consistency
+    const validTimeslots = timeslots.filter((slot) => {
+      // Ensure the slot is available
+      if (!slot.isAvailable) return false;
+
+      // Check for client type match
+      const hasAllClientType = activeClientTypes.includes("all");
+      const clientTypeMatch =
+        hasAllClientType ||
+        slot.clientType === "all" ||
+        activeClientTypes.includes(slot.clientType) ||
+        (Array.isArray(slot.clientType) &&
+          slot.clientType.some((ct) => activeClientTypes.includes(ct)));
+
+      if (!clientTypeMatch) return false;
+
+      // Check if the timeslot is in the past
+      const startTime = new Date(slot.startTime);
+      if (startTime < now && !isSameDay(startTime, now)) {
+        return false;
+      }
+
+      return true;
+    });
+
+    console.log(
+      `After pre-filtering: ${validTimeslots.length} valid timeslots for month view`
+    );
+    return groupTimeslotsByDay(validTimeslots);
+  }, [timeslots, activeClientTypes, now]);
 
   const currentMonth = currentDate.getMonth();
 
@@ -135,27 +164,21 @@ export default function MonthView({
           const dateStr = date.toISOString().split("T")[0];
           const dayTimeslots = timeslotsByDay[dateStr] || [];
 
-          // Filter timeslots based on client type and admin status
-          const filteredTimeslots = dayTimeslots.filter((slot) => {
-            // Check if slot is available
-            if (!slot.isAvailable) return false;
+          // We've already pre-filtered the timeslots, so just use them directly
+          const filteredTimeslots = dayTimeslots;
 
-            // Check client type match
-            const clientTypeMatch =
-              hasAllClientType ||
-              slot.clientType === "all" ||
-              activeClientTypes.includes(slot.clientType) ||
-              (Array.isArray(slot.clientType) &&
-                slot.clientType.some((ct) => activeClientTypes.includes(ct)));
-
-            if (!clientTypeMatch) return false;
-
-            return true;
-          });
+          // Skip further filtering since we did it earlier
+          // Just ensure slots for the current day are not in the past
+          const activeTimeslots = isToday
+            ? filteredTimeslots.filter((slot) => {
+                const startTime = new Date(slot.startTime);
+                return startTime >= now;
+              })
+            : filteredTimeslots;
 
           // Count available slots by meeting type
           const meetingTypeCounts: Record<string, number> = {};
-          filteredTimeslots.forEach((slot) => {
+          activeTimeslots.forEach((slot) => {
             const types = slot.meetingTypes.split(",").map((t) => t.trim());
             types.forEach((type) => {
               if (!type) return;
@@ -168,10 +191,10 @@ export default function MonthView({
           const hasZoomMeetings = meetingTypes.includes("זום");
           const hasInPersonMeetings = meetingTypes.includes("פגישה");
 
-          const totalSlots = filteredTimeslots.length;
+          const totalSlots = activeTimeslots.length;
 
           // Check if any timeslots are currently active
-          const hasActiveSlots = filteredTimeslots.some((slot) => {
+          const hasActiveSlots = activeTimeslots.some((slot) => {
             const startTime = new Date(slot.startTime);
             const endTime = new Date(slot.endTime);
             const nowTime = now.getTime();

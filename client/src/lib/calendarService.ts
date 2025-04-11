@@ -397,7 +397,14 @@ export function groupTimeslotsByDay(
 
   console.log(`Grouping ${timeslots.length} timeslots by day`);
 
-  timeslots.forEach((timeslot) => {
+  // First, let's ensure all timeslots are actually available
+  const availableTimeslots = timeslots.filter(slot => slot.isAvailable);
+
+  if (availableTimeslots.length < timeslots.length) {
+    console.log(`Filtered out ${timeslots.length - availableTimeslots.length} unavailable timeslots`);
+  }
+
+  availableTimeslots.forEach((timeslot) => {
     try {
       // Ensure timeslot has valid dates
       const startDate = new Date(timeslot.startTime);
@@ -453,7 +460,14 @@ export function groupTimeslotsByDay(
 
   // Log some debug info about the result
   const totalGroupedTimeslots = Object.values(grouped).flat().length;
-  console.log(`Grouped ${timeslots.length} timeslots into ${Object.keys(grouped).length} days (${totalGroupedTimeslots} total entries)`);
+  const dateKeys = Object.keys(grouped);
+
+  console.log(`Grouped ${availableTimeslots.length} timeslots into ${dateKeys.length} days (${totalGroupedTimeslots} total entries)`);
+
+  // Log each date with its timeslot count
+  dateKeys.forEach(dateKey => {
+    console.log(`Date ${dateKey}: ${grouped[dateKey].length} timeslots`);
+  });
 
   return grouped;
 }
