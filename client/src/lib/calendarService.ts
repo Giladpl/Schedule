@@ -397,18 +397,11 @@ export function groupTimeslotsByDay(
 
   console.log(`Grouping ${timeslots.length} timeslots by day`);
 
-  // Track which slots we've added to which days to avoid duplicates
-  const slotsByDay = new Map<string, Set<number>>();
+  // IMPORTANT: We are only grouping, not filtering at this point
+  // All filtering should be done before calling this function
+  // This ensures consistency between monthly and weekly views
 
-  // First, ensure we're only dealing with available timeslots
-  const availableTimeslots = timeslots.filter(slot => slot.isAvailable);
-
-  if (availableTimeslots.length < timeslots.length) {
-    console.log(`Filtered out ${timeslots.length - availableTimeslots.length} unavailable timeslots`);
-  }
-
-  // Process each timeslot
-  availableTimeslots.forEach((timeslot) => {
+  timeslots.forEach((timeslot) => {
     try {
       // Ensure timeslot has valid dates
       const startDate = new Date(timeslot.startTime);
@@ -422,25 +415,14 @@ export function groupTimeslotsByDay(
       // Get the date key in YYYY-MM-DD format - consistent across the application
       const dateKey = startDate.toISOString().split('T')[0];
 
-      // Initialize containers if needed
+      // Initialize array if needed
       if (!grouped[dateKey]) {
         grouped[dateKey] = [];
       }
 
-      if (!slotsByDay.has(dateKey)) {
-        slotsByDay.set(dateKey, new Set<number>());
-      }
-
-      // Check if we already added this slot to the day
-      const daySlotIds = slotsByDay.get(dateKey)!;
-      if (!daySlotIds.has(timeslot.id)) {
-        // Add the timeslot to this day
-        grouped[dateKey].push(timeslot);
-        daySlotIds.add(timeslot.id);
-
-        // Debug the added timeslot
-        console.log(`Added timeslot ID=${timeslot.id} to date ${dateKey}, meeting types: ${timeslot.meetingTypes}`);
-      }
+      // Add the timeslot to this day
+      grouped[dateKey].push(timeslot);
+      console.log(`Added timeslot ID=${timeslot.id} to date ${dateKey}`);
 
       // Handle multi-day timeslots - only if they span multiple calendar days
       const startDay = new Date(startDate);
@@ -463,20 +445,9 @@ export function groupTimeslotsByDay(
             grouped[currentDateKey] = [];
           }
 
-          if (!slotsByDay.has(currentDateKey)) {
-            slotsByDay.set(currentDateKey, new Set<number>());
-          }
-
-          // Add the slot to this day if not already added
-          const currentDaySlotIds = slotsByDay.get(currentDateKey)!;
-          if (!currentDaySlotIds.has(timeslot.id)) {
-            // Add slot to this day too
-            grouped[currentDateKey].push(timeslot);
-            currentDaySlotIds.add(timeslot.id);
-
-            // Debug multi-day addition
-            console.log(`Added multi-day timeslot ID=${timeslot.id} to additional date ${currentDateKey}`);
-          }
+          // Add the same timeslot to this day too
+          grouped[currentDateKey].push(timeslot);
+          console.log(`Added multi-day timeslot ID=${timeslot.id} to additional date ${currentDateKey}`);
 
           // Move to next day
           currentDay.setDate(currentDay.getDate() + 1);
@@ -487,30 +458,9 @@ export function groupTimeslotsByDay(
     }
   });
 
-  // Summarize the results for debugging
+  // Summarize the results
   const totalGroupedTimeslots = Object.values(grouped).flat().length;
-  const dateKeys = Object.keys(grouped).sort();
-
-  console.log(`Grouped ${availableTimeslots.length} timeslots into ${dateKeys.length} days (${totalGroupedTimeslots} total entries)`);
-
-  // Log each date with its timeslot count
-  dateKeys.forEach(dateKey => {
-    const slots = grouped[dateKey];
-    console.log(`Date ${dateKey}: ${slots.length} timeslots`);
-
-    // List all the slot IDs for this date
-    const slotIds = slots.map(slot => slot.id).join(', ');
-    console.log(`  Slot IDs for ${dateKey}: ${slotIds}`);
-
-    // List meeting types available on this date
-    const meetingTypes = new Set<string>();
-    slots.forEach(slot => {
-      slot.meetingTypes.split(',').forEach(type => {
-        if (type.trim()) meetingTypes.add(type.trim());
-      });
-    });
-    console.log(`  Meeting types for ${dateKey}: ${Array.from(meetingTypes).join(', ')}`);
-  });
+  console.log(`Grouped ${timeslots.length} timeslots into ${Object.keys(grouped).length} days (${totalGroupedTimeslots} total entries)`);
 
   return grouped;
 }
@@ -552,8 +502,10 @@ export function shouldShowTimeslot(
       return false;
     }
 
-    // 4. Skip slots that are entirely in the past
+    // 4. CRITICAL: Match weekly view's logic EXACTLY for past slots
+    // Weekly view shows slots if they END in the future, even if they START in the past
     if (endTime < currentTime) {
+      console.log(`Filtering out past timeslot (ID=${timeslot.id}): ends at ${endTime.toISOString()}, current time is ${currentTime.toISOString()}`);
       return false;
     }
 

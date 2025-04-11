@@ -63,6 +63,7 @@ export default function MonthView({
     }
 
     // Use the shared helper function to consistently filter timeslots
+    // This MUST match WeekView's filtering exactly
     const validTimeslots = timeslots.filter((slot) =>
       shouldShowTimeslot(slot, now, activeClientTypes)
     );
@@ -91,6 +92,10 @@ export default function MonthView({
     // Add debug log to check final result
     Object.entries(grouped).forEach(([dateKey, slots]) => {
       console.log(`Month view - Date ${dateKey} has ${slots.length} timeslots`);
+
+      // Print all slot IDs for each date to help debug
+      const slotIds = slots.map((s) => s.id).join(", ");
+      console.log(`Month view - Slot IDs for ${dateKey}: ${slotIds}`);
     });
 
     return grouped;
@@ -183,10 +188,27 @@ export default function MonthView({
           const isToday = isSameDay(date, now);
           const dateStr = date.toISOString().split("T")[0];
 
-          // Debug log for specific dates we saw issues with
+          // Get timeslots for this day - these have ALREADY been filtered by shouldShowTimeslot
           const dayTimeslots = timeslotsByDay[dateStr] || [];
 
-          // No additional filtering here - the slots have already been pre-filtered
+          // DEBUG: Log available timeslots for important dates
+          if (dayTimeslots.length > 0) {
+            console.log(
+              `MonthView cell for ${dateStr} has ${dayTimeslots.length} timeslots`
+            );
+            dayTimeslots.forEach((slot) => {
+              console.log(
+                `  Slot ${slot.id}: ${new Date(
+                  slot.startTime
+                ).toLocaleTimeString()} - ${new Date(
+                  slot.endTime
+                ).toLocaleTimeString()}`
+              );
+            });
+          }
+
+          // NO additional filtering - we use ALL timeslots for this day
+          // This ensures exact consistency with the weekly view
           const activeTimeslots = dayTimeslots;
 
           // Count available slots by meeting type
