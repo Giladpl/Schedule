@@ -434,6 +434,41 @@ const getTimeslotsForDay = (
   }
 };
 
+// Component for displaying the current time indicator
+function CurrentTimeIndicator() {
+  const [currentTime, setCurrentTime] = useState(getNowInIsrael());
+
+  // Update current time every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(getNowInIsrael());
+    }, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Calculate position based on current time
+  const currentHour = currentTime.getHours();
+  const currentMinute = currentTime.getMinutes();
+
+  // Calculate percentage for positioning (0-24h scale)
+  const hourPercentage = ((currentHour - 7 + currentMinute / 60) / 16) * 100;
+
+  return (
+    <div
+      className="absolute left-0 right-0 z-40 pointer-events-none"
+      style={{
+        top: `${hourPercentage}%`,
+      }}
+    >
+      <div className="flex items-center">
+        <div className="w-3 h-3 rounded-full bg-red-500 shadow-lg"></div>
+        <div className="h-[2px] flex-grow bg-red-500"></div>
+      </div>
+    </div>
+  );
+}
+
 // Component for a day's schedule
 function DaySchedule({
   day,
@@ -444,6 +479,9 @@ function DaySchedule({
   activeClientTypes = [],
   isAdmin,
   meetingType,
+  cellHourHeight,
+  usePercentage,
+  isToday,
 }: {
   day: Date;
   timeslots: Timeslot[] | Timeslot[][];
@@ -453,6 +491,9 @@ function DaySchedule({
   activeClientTypes?: string[];
   isAdmin?: boolean;
   meetingType?: string;
+  cellHourHeight: number;
+  usePercentage: boolean;
+  isToday: boolean;
 }) {
   const { width, height } = useWindowSize();
   const isMobile = useMemo(() => {
@@ -521,11 +562,41 @@ function DaySchedule({
   const END_HOUR = 22;
   const TOTAL_HOURS = END_HOUR - START_HOUR + 1;
 
+  // Current time indicator state
+  const [currentTime, setCurrentTime] = useState(getNowInIsrael());
+
+  // Update time every minute
+  useEffect(() => {
+    if (!isToday) return;
+
+    const interval = setInterval(() => {
+      setCurrentTime(getNowInIsrael());
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [isToday]);
+
+  // Calculate time indicator position
+  const timeIndicatorPosition = useMemo(() => {
+    if (!isToday) return 0;
+
+    const israelNow = currentTime;
+    const hour = israelNow.getHours();
+    const minutes = israelNow.getMinutes();
+
+    // Only show if current time is within the displayed hours
+    if (hour < START_HOUR || hour > END_HOUR) return -1;
+
+    // Calculate position as percentage of daily timeline
+    const hourFraction = hour - START_HOUR + minutes / 60;
+    return (hourFraction / TOTAL_HOURS) * 100;
+  }, [currentTime, isToday, START_HOUR, END_HOUR, TOTAL_HOURS]);
+
   // Calculate available height for the time grid
   const availableHeight = height - 180; // Approx header + info section height
 
   // Calculate adaptive hour height based on available space (min 48px, prefer 64px)
-  const hourHeight = Math.max(
+  const dayCellHourHeight = Math.max(
     48,
     Math.min(64, Math.floor(availableHeight / TOTAL_HOURS))
   );
@@ -817,6 +888,27 @@ function DaySchedule({
             </div>
           </div>
         </div>
+
+        {/* Time indicator - only for today */}
+        {isToday && (
+          <div
+            className="absolute left-0 right-0 z-50 pointer-events-none"
+            style={{
+              top: `${
+                ((currentTime.getHours() -
+                  START_HOUR +
+                  currentTime.getMinutes() / 60) /
+                  TOTAL_HOURS) *
+                100
+              }%`,
+            }}
+          >
+            <div className="flex items-center">
+              <div className="w-3 h-3 rounded-full bg-red-500"></div>
+              <div className="h-[2px] flex-grow bg-red-500"></div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -831,7 +923,7 @@ export default function WeekView({
   viewMode = "admin",
 }: WeekViewProps) {
   const timeGridRef = React.useRef<HTMLDivElement>(null);
-  const [hourHeight, setHourHeight] = useState(60); // Default hour height in pixels
+  const [globalHourHeight, setGlobalHourHeight] = useState(60); // Default hour height in pixels
 
   // Generate days of the week
   const days = useMemo(() => {
@@ -1093,7 +1185,7 @@ export default function WeekView({
         const availableHeight = timeGridRef.current.clientHeight;
         const totalHours = hourLabels.length;
         const newHourHeight = Math.max(60, availableHeight / totalHours);
-        setHourHeight(newHourHeight);
+        setGlobalHourHeight(newHourHeight);
       }
     };
 
@@ -1118,6 +1210,12 @@ export default function WeekView({
       activeClientTypes || ["all"]
     )
   );
+
+  // Calculate if each day is today's date
+  const today = getNowInIsrael();
+  const isToday = (date: Date) => {
+    return isSameDay(date, today);
+  };
 
   return (
     <div className="flex flex-col h-full" dir="rtl">
@@ -1174,6 +1272,9 @@ export default function WeekView({
               activeClientTypes={activeClientTypes || ["all"]}
               isAdmin={viewMode === "admin"}
               meetingType={selectedMeetingTypes.join(",")}
+              cellHourHeight={globalHourHeight}
+              usePercentage={true}
+              isToday={isToday(day)}
             />
           );
         })}
