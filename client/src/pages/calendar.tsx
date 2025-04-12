@@ -254,7 +254,33 @@ export default function Calendar() {
     console.log(`View mode changed to: ${newViewMode}`);
   };
 
-  // Fetch timeslots from API with the WEEKLY date range for BOTH views
+  // Sync calendar on component mount
+  useEffect(() => {
+    const syncGoogleCalendar = async () => {
+      setIsSyncing(true);
+      try {
+        await syncCalendar();
+        console.log("Calendar synced successfully");
+
+        // After syncing, force a refresh of timeslots
+        queryClient.invalidateQueries({ queryKey: ["timeslots"] });
+      } catch (error) {
+        console.error("Error syncing calendar:", error);
+        toast({
+          title: "Sync Error",
+          description:
+            "Failed to sync with Google Calendar. You may see outdated events.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsSyncing(false);
+      }
+    };
+
+    syncGoogleCalendar();
+  }, [toast, queryClient]);
+
+  // Better approach for initial data loading - modify the React Query configuration
   const {
     data: timeslots = [],
     isLoading,
@@ -350,8 +376,12 @@ export default function Calendar() {
         throw error;
       }
     },
-    staleTime: 60000, // 1 minute
-    refetchOnWindowFocus: false,
+    staleTime: 30000, // 30 seconds
+    // Added for initial data loading reliability
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    // Remove delay from initialization
+    initialDataUpdatedAt: 0,
   });
 
   // Custom view change handler to refresh reference time
@@ -535,56 +565,12 @@ export default function Calendar() {
     queryClient.invalidateQueries({ queryKey: ["timeslots"] });
   };
 
-  // Sync calendar on component mount
-  useEffect(() => {
-    const syncGoogleCalendar = async () => {
-      setIsSyncing(true);
-      try {
-        await syncCalendar();
-        console.log("Calendar synced successfully");
-
-        // After syncing, force a refresh of timeslots to ensure data loads on initial render
-        queryClient.invalidateQueries({ queryKey: ["timeslots"] });
-        queryClient.refetchQueries({ queryKey: ["timeslots"] });
-      } catch (error) {
-        console.error("Error syncing calendar:", error);
-        toast({
-          title: "Sync Error",
-          description:
-            "Failed to sync with Google Calendar. You may see outdated events.",
-          variant: "destructive",
-        });
-      } finally {
-        setIsSyncing(false);
-      }
-    };
-
-    syncGoogleCalendar();
-  }, [toast, queryClient]); // Add queryClient to dependency array
-
-  // Add an initial data loading effect to ensure data appears on first render
-  useEffect(() => {
-    // Force an immediate refresh of the data when component mounts
-    console.log("Initial component mount - forcing data refresh");
-    queryClient.invalidateQueries({ queryKey: ["timeslots"] });
-
-    // Small delay to ensure state has settled before refetching
-    const timer = setTimeout(() => {
-      queryClient.refetchQueries({ queryKey: ["timeslots"] });
-    }, 200);
-
-    return () => clearTimeout(timer);
-  }, []); // Empty dependency array means this runs once on mount
-
   // Add an effect to refresh data when view changes
   useEffect(() => {
     console.log(`View changed to ${view} - forcing data refresh`);
 
     // Clear React Query cache for timeslots to ensure fresh filtering
     queryClient.invalidateQueries({ queryKey: ["timeslots"] });
-
-    // Also clear any other caches that might affect view rendering
-    queryClient.refetchQueries({ queryKey: ["timeslots"] });
   }, [view, queryClient]);
 
   // Update reference time on a regular interval
