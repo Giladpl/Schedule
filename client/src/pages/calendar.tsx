@@ -1,6 +1,7 @@
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { useLocation, useRoute } from "wouter";
 
 import { BookingModal } from "@/components/calendar/BookingModal";
 import CalendarHeader from "@/components/calendar/CalendarHeader";
@@ -41,6 +42,10 @@ interface ClientRuleFromAPI {
 export default function Calendar() {
   console.log("[CALENDAR-INIT] Calendar component initialization started");
 
+  // Use Wouter's hooks
+  const [location, setLocation] = useLocation();
+  const [isAdminRoute] = useRoute("/admin");
+
   const searchParams = new URLSearchParams(window.location.search);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -64,8 +69,10 @@ export default function Calendar() {
   } | null>(null);
 
   // Update the state to use arrays for multiple selection
-  const [viewMode, setViewMode] = useState<"admin" | "client">("admin");
-  const isAdmin = true;
+  const [viewMode, setViewMode] = useState<"admin" | "client">(
+    isAdminRoute ? "admin" : "client"
+  );
+  const isAdmin = viewMode === "admin";
 
   // Extract type from URL
   const queryType = searchParams.get("type");
@@ -134,6 +141,19 @@ export default function Calendar() {
       console.log("[CALENDAR-INIT] Calendar component unmounting");
     };
   }, []);
+
+  // Update URL when view mode changes
+  useEffect(() => {
+    // Sync viewMode with URL - only if component is mounted
+    if (isInitialized) {
+      const shouldBeAdmin = isAdminRoute;
+      if (shouldBeAdmin && viewMode !== "admin") {
+        setViewMode("admin");
+      } else if (!shouldBeAdmin && viewMode !== "client") {
+        setViewMode("client");
+      }
+    }
+  }, [isAdminRoute, viewMode, isInitialized]);
 
   // Match client types dynamically based on query param
   useEffect(() => {
@@ -250,6 +270,91 @@ export default function Calendar() {
     }
   }, [viewMode, clientTypes, fullClientTypes]);
 
+  // Handle client type change - only allowed for admin
+  const handleClientTypeChange = (values: string[]) => {
+    if (!isAdmin) return; // Only admins can change client type directly
+
+    console.log(`[Debug] User selected client types: ${values.join(", ")}`);
+
+    // If the values array is empty, default to "all"
+    if (values.length === 0) {
+      values = ["all"];
+    }
+    // Check if "all" is added while other options exist
+    else if (values.includes("all") && values.length > 1) {
+      // If current selection doesn't include "all" but new selection does, just use "all"
+      if (!clientTypes.includes("all")) {
+        values = ["all"];
+      }
+      // If current selection includes "all" and user selects another type, remove "all"
+      else {
+        values = values.filter((v) => v !== "all");
+      }
+    }
+
+    // Force update client types state
+    setClientTypes(values);
+
+    // When client types change, we should update fullClientTypes accordingly
+    const hasAllClientType = values.includes("all");
+
+    if (hasAllClientType) {
+      setFullClientTypes([]);
+    } else {
+      // For non-"all" values, attempt to find matching client data
+      if (clientData?.clients) {
+        const newFullClientTypes: string[] = [];
+
+        values.forEach((value) => {
+          // First try to match by ID
+          const numericId = !isNaN(parseInt(value))
+            ? parseInt(value)
+            : undefined;
+
+          // Find the client by ID or type name directly
+          const matchedClient =
+            numericId !== undefined
+              ? clientData.clients.find((client) => client.id === numericId)
+              : clientData.clients.find((client) => client.type === value);
+
+          if (matchedClient) {
+            // Use the client.type directly from the matched client, which is the raw value from the server
+            newFullClientTypes.push(matchedClient.type);
+            console.log(
+              `[Debug] Matched client: ${matchedClient.type} (ID: ${matchedClient.id})`
+            );
+          } else {
+            // If not found, use the raw value
+            newFullClientTypes.push(value);
+            console.log(
+              `[Debug] Using direct value as fullClientType: ${value}`
+            );
+          }
+        });
+
+        setFullClientTypes(newFullClientTypes);
+      } else {
+        // If no client data available, use the raw values
+        setFullClientTypes(values);
+      }
+    }
+
+    // Update URL with Wouter's navigation
+    if (values.length === 1 && values[0] === "all") {
+      setLocation(viewMode === "admin" ? "/admin" : "/calendar");
+    } else {
+      // Join all selected values with commas for the URL
+      setLocation(
+        `${
+          viewMode === "admin" ? "/admin" : "/calendar"
+        }?type=${encodeURIComponent(values.join(","))}`
+      );
+    }
+
+    // Force refetch timeslots with the new client types
+    queryClient.invalidateQueries({ queryKey: ["timeslots"] });
+  };
+
   // Fix the handleViewModeToggle function to properly toggle between views
   const handleViewModeToggle = () => {
     // Toggle between admin and client views
@@ -265,6 +370,9 @@ export default function Calendar() {
         : ["new_customer"]
     );
 
+    // Update URL when toggling view mode using Wouter
+    setLocation(newViewMode === "admin" ? "/admin" : "/calendar");
+
     console.log(`View mode changed to: ${newViewMode}`);
   };
 
@@ -275,9 +383,6 @@ export default function Calendar() {
       try {
         await syncCalendar();
         console.log("Calendar synced successfully");
-
-        // After syncing, force a refresh of timeslots
-        queryClient.invalidateQueries({ queryKey: ["timeslots"] });
       } catch (error) {
         console.error("Error syncing calendar:", error);
         toast({
@@ -292,7 +397,7 @@ export default function Calendar() {
     };
 
     syncGoogleCalendar();
-  }, [toast, queryClient]);
+  }, [toast]);
 
   // Better approach for initial data loading - modify the React Query configuration
   const {
@@ -386,12 +491,12 @@ export default function Calendar() {
 
         const data = await response.json();
         console.log(
-          `[INITIAL-LOAD-DEBUG] Received ${data.length} timeslots from server`
+          `[CALENDAR-QUERY] Received ${data.length} timeslots from server`
         );
 
         return data;
       } catch (error) {
-        console.error("[INITIAL-LOAD-DEBUG] Error fetching timeslots:", error);
+        console.error("[CALENDAR-QUERY] Error fetching timeslots:", error);
         throw error;
       }
     },
@@ -488,91 +593,6 @@ export default function Calendar() {
   // Handle form submission
   const handleBookingSubmit = (formData: z.infer<typeof bookingFormSchema>) => {
     mutate(formData);
-  };
-
-  // Handle client type change - only allowed for admin
-  const handleClientTypeChange = (values: string[]) => {
-    if (!isAdmin) return; // Only admins can change client type directly
-
-    console.log(`[Debug] User selected client types: ${values.join(", ")}`);
-
-    // If the values array is empty, default to "all"
-    if (values.length === 0) {
-      values = ["all"];
-    }
-    // Check if "all" is added while other options exist
-    else if (values.includes("all") && values.length > 1) {
-      // If current selection doesn't include "all" but new selection does, just use "all"
-      if (!clientTypes.includes("all")) {
-        values = ["all"];
-      }
-      // If current selection includes "all" and user selects another type, remove "all"
-      else {
-        values = values.filter((v) => v !== "all");
-      }
-    }
-
-    // Force update client types state
-    setClientTypes(values);
-
-    // When client types change, we should update fullClientTypes accordingly
-    const hasAllClientType = values.includes("all");
-
-    if (hasAllClientType) {
-      setFullClientTypes([]);
-    } else {
-      // For non-"all" values, attempt to find matching client data
-      if (clientData?.clients) {
-        const newFullClientTypes: string[] = [];
-
-        values.forEach((value) => {
-          // First try to match by ID
-          const numericId = !isNaN(parseInt(value))
-            ? parseInt(value)
-            : undefined;
-
-          // Find the client by ID or type name directly
-          const matchedClient =
-            numericId !== undefined
-              ? clientData.clients.find((client) => client.id === numericId)
-              : clientData.clients.find((client) => client.type === value);
-
-          if (matchedClient) {
-            // Use the client.type directly from the matched client, which is the raw value from the server
-            newFullClientTypes.push(matchedClient.type);
-            console.log(
-              `[Debug] Matched client: ${matchedClient.type} (ID: ${matchedClient.id})`
-            );
-          } else {
-            // If not found, use the raw value
-            newFullClientTypes.push(value);
-            console.log(
-              `[Debug] Using direct value as fullClientType: ${value}`
-            );
-          }
-        });
-
-        setFullClientTypes(newFullClientTypes);
-      } else {
-        // If no client data available, use the raw values
-        setFullClientTypes(values);
-      }
-    }
-
-    // Update URL without using React Router
-    if (values.length === 1 && values[0] === "all") {
-      const path = viewMode === "admin" ? "/admin" : "/calendar";
-      navigateTo(path);
-    } else {
-      // Join all selected values with commas for the URL
-      const path = `${
-        viewMode === "admin" ? "/admin" : "/calendar"
-      }?type=${encodeURIComponent(values.join(","))}`;
-      navigateTo(path);
-    }
-
-    // Force refetch timeslots with the new client types
-    queryClient.invalidateQueries({ queryKey: ["timeslots"] });
   };
 
   // Handle meeting type change
@@ -703,11 +723,6 @@ export default function Calendar() {
       });
     },
   });
-
-  // Replace navigate with window.location
-  const navigateTo = (path: string) => {
-    window.location.href = path;
-  };
 
   return (
     <div className="h-full flex flex-col" dir="rtl">
