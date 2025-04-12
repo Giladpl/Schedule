@@ -8,7 +8,7 @@ import {
 import { fetchClientData, refreshClientRules } from "@/lib/calendarService";
 import { queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
-import { Phone, RefreshCcw, Users, Video } from "lucide-react";
+import { Phone, Users, Video } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 // Default meeting types if we can't fetch them from server
@@ -395,22 +395,6 @@ export default function Sidebar({
       </Card>
 
       <div className="mt-6">
-        {isAdmin && (
-          <Button
-            variant="outline"
-            className="w-full text-[#1a73e8] border-[#dadce0] hover:bg-[#f1f3f4] mb-4"
-            onClick={() => refreshSheetData()}
-            disabled={isLoading || isRefreshing}
-          >
-            <RefreshCcw className="h-3.5 w-3.5 ml-2" />
-            {isRefreshing
-              ? "מרענן מהגיליון..."
-              : isLoading
-              ? "מרענן..."
-              : "רענן נתוני לקוחות"}
-          </Button>
-        )}
-
         <Button
           variant="outline"
           className="w-full text-[#1a73e8] border-[#dadce0] hover:bg-[#f1f3f4]"
