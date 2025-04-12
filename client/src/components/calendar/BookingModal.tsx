@@ -289,10 +289,11 @@ export function BookingModal({
       ] || CLIENT_TYPE_COLORS.default
     : "#8b5cf6";
 
-  if (!timeslot) return null;
+  // CRITICAL ERROR FIX: Don't return early before useMemo hooks
+  // if (!timeslot) return null;
 
-  const startDate = new Date(timeslot.startTime);
-  const endDate = new Date(timeslot.endTime);
+  const startDate = timeslot ? new Date(timeslot.startTime) : new Date();
+  const endDate = timeslot ? new Date(timeslot.endTime) : new Date();
 
   // If endTime is earlier than startTime, it's likely an error in the data
   // In that case, swap them for display purposes only
@@ -302,13 +303,18 @@ export function BookingModal({
     startDate.getTime() < endDate.getTime() ? endDate : startDate;
 
   // Parse meeting types from the timeslot string
-  const timeslotMeetingTypes = timeslot.meetingTypes
-    .split(",")
-    .map((type) => type.trim())
-    .filter(Boolean);
+  const timeslotMeetingTypes = timeslot
+    ? timeslot.meetingTypes
+        .split(",")
+        .map((type) => type.trim())
+        .filter(Boolean)
+    : [];
 
   // Filter meeting types based on client type (for all slots including Saturday slots)
   const availableMeetingTypes = useMemo(() => {
+    // Early return if no timeslot is available
+    if (!timeslot) return [];
+
     // For "all" client type, show all meeting types from the timeslot
     if (timeslot.clientType === "all" && activeClientType === "all") {
       return timeslotMeetingTypes;
@@ -357,7 +363,10 @@ export function BookingModal({
 
     // Only keep meeting types that are both in the timeslot AND allowed for this client type
     return timeslotMeetingTypes.filter((type) => allowedTypes.includes(type));
-  }, [timeslotMeetingTypes, timeslot.clientType, activeClientType, clientData]);
+  }, [timeslotMeetingTypes, timeslot, activeClientType, clientData]);
+
+  // Now we can safely do an early return after all hooks have been called
+  if (!timeslot) return null;
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
