@@ -1,7 +1,8 @@
 import { useToast } from "@/hooks/use-toast";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useRoute } from "wouter";
+import { useLocation } from "wouter";
 
 import { BookingModal } from "@/components/calendar/BookingModal";
 import CalendarHeader from "@/components/calendar/CalendarHeader";
@@ -40,14 +41,8 @@ interface ClientRuleFromAPI {
 }
 
 export default function Calendar() {
-  console.log("[CALENDAR-INIT] Calendar component initialization started");
-
-  // Use Wouter's hooks
-  const [location, setLocation] = useLocation();
-  const [isAdminRoute] = useRoute("/admin");
-
+  const [location, navigate] = useLocation();
   const searchParams = new URLSearchParams(window.location.search);
-  const queryClient = useQueryClient();
   const { toast } = useToast();
 
   // States - initialize with today's date
@@ -69,10 +64,8 @@ export default function Calendar() {
   } | null>(null);
 
   // Update the state to use arrays for multiple selection
-  const [viewMode, setViewMode] = useState<"admin" | "client">(
-    isAdminRoute ? "admin" : "client"
-  );
-  const isAdmin = viewMode === "admin";
+  const [viewMode, setViewMode] = useState<"admin" | "client">("admin");
+  const isAdmin = true;
 
   // Extract type from URL
   const queryType = searchParams.get("type");
@@ -127,33 +120,6 @@ export default function Calendar() {
     queryFn: fetchClientData,
     staleTime: 60000, // 1 minute
   });
-
-  // Add tracking for initialization
-  const [isInitialized, setIsInitialized] = useState(false);
-
-  // Track initial render
-  useEffect(() => {
-    console.log("[CALENDAR-INIT] Calendar component mounted");
-    // Mark component as initialized after mounting
-    setIsInitialized(true);
-
-    return () => {
-      console.log("[CALENDAR-INIT] Calendar component unmounting");
-    };
-  }, []);
-
-  // Update URL when view mode changes
-  useEffect(() => {
-    // Sync viewMode with URL - only if component is mounted
-    if (isInitialized) {
-      const shouldBeAdmin = isAdminRoute;
-      if (shouldBeAdmin && viewMode !== "admin") {
-        setViewMode("admin");
-      } else if (!shouldBeAdmin && viewMode !== "client") {
-        setViewMode("client");
-      }
-    }
-  }, [isAdminRoute, viewMode, isInitialized]);
 
   // Match client types dynamically based on query param
   useEffect(() => {
@@ -270,91 +236,6 @@ export default function Calendar() {
     }
   }, [viewMode, clientTypes, fullClientTypes]);
 
-  // Handle client type change - only allowed for admin
-  const handleClientTypeChange = (values: string[]) => {
-    if (!isAdmin) return; // Only admins can change client type directly
-
-    console.log(`[Debug] User selected client types: ${values.join(", ")}`);
-
-    // If the values array is empty, default to "all"
-    if (values.length === 0) {
-      values = ["all"];
-    }
-    // Check if "all" is added while other options exist
-    else if (values.includes("all") && values.length > 1) {
-      // If current selection doesn't include "all" but new selection does, just use "all"
-      if (!clientTypes.includes("all")) {
-        values = ["all"];
-      }
-      // If current selection includes "all" and user selects another type, remove "all"
-      else {
-        values = values.filter((v) => v !== "all");
-      }
-    }
-
-    // Force update client types state
-    setClientTypes(values);
-
-    // When client types change, we should update fullClientTypes accordingly
-    const hasAllClientType = values.includes("all");
-
-    if (hasAllClientType) {
-      setFullClientTypes([]);
-    } else {
-      // For non-"all" values, attempt to find matching client data
-      if (clientData?.clients) {
-        const newFullClientTypes: string[] = [];
-
-        values.forEach((value) => {
-          // First try to match by ID
-          const numericId = !isNaN(parseInt(value))
-            ? parseInt(value)
-            : undefined;
-
-          // Find the client by ID or type name directly
-          const matchedClient =
-            numericId !== undefined
-              ? clientData.clients.find((client) => client.id === numericId)
-              : clientData.clients.find((client) => client.type === value);
-
-          if (matchedClient) {
-            // Use the client.type directly from the matched client, which is the raw value from the server
-            newFullClientTypes.push(matchedClient.type);
-            console.log(
-              `[Debug] Matched client: ${matchedClient.type} (ID: ${matchedClient.id})`
-            );
-          } else {
-            // If not found, use the raw value
-            newFullClientTypes.push(value);
-            console.log(
-              `[Debug] Using direct value as fullClientType: ${value}`
-            );
-          }
-        });
-
-        setFullClientTypes(newFullClientTypes);
-      } else {
-        // If no client data available, use the raw values
-        setFullClientTypes(values);
-      }
-    }
-
-    // Update URL with Wouter's navigation
-    if (values.length === 1 && values[0] === "all") {
-      setLocation(viewMode === "admin" ? "/admin" : "/calendar");
-    } else {
-      // Join all selected values with commas for the URL
-      setLocation(
-        `${
-          viewMode === "admin" ? "/admin" : "/calendar"
-        }?type=${encodeURIComponent(values.join(","))}`
-      );
-    }
-
-    // Force refetch timeslots with the new client types
-    queryClient.invalidateQueries({ queryKey: ["timeslots"] });
-  };
-
   // Fix the handleViewModeToggle function to properly toggle between views
   const handleViewModeToggle = () => {
     // Toggle between admin and client views
@@ -370,9 +251,6 @@ export default function Calendar() {
         : ["new_customer"]
     );
 
-    // Update URL when toggling view mode using Wouter
-    setLocation(newViewMode === "admin" ? "/admin" : "/calendar");
-
     console.log(`View mode changed to: ${newViewMode}`);
   };
 
@@ -383,6 +261,9 @@ export default function Calendar() {
       try {
         await syncCalendar();
         console.log("Calendar synced successfully");
+
+        // After syncing, force a refresh of timeslots
+        queryClient.invalidateQueries({ queryKey: ["timeslots"] });
       } catch (error) {
         console.error("Error syncing calendar:", error);
         toast({
@@ -397,7 +278,7 @@ export default function Calendar() {
     };
 
     syncGoogleCalendar();
-  }, [toast]);
+  }, [toast, queryClient]);
 
   // Better approach for initial data loading - modify the React Query configuration
   const {
@@ -411,30 +292,8 @@ export default function Calendar() {
       fetchEndDate,
       clientTypes,
       meetingTypes,
-      isInitialized, // Add initialization state to query key
     ],
     queryFn: async () => {
-      // IMPORTANT DEBUG MESSAGE: This will show when the query is actually executed
-      console.log(
-        `[CALENDAR-QUERY] QUERY FUNCTION EXECUTING with clientTypes=${JSON.stringify(
-          clientTypes
-        )} and meetingTypes=${JSON.stringify(meetingTypes)}`
-      );
-      console.log(`[CALENDAR-QUERY] Component initialized: ${isInitialized}`);
-      console.log(
-        `[CALENDAR-QUERY] Array lengths: clientTypes=${clientTypes.length}, meetingTypes=${meetingTypes.length}`
-      );
-      console.log(
-        `[CALENDAR-QUERY] Has 'all' in clientTypes: ${clientTypes.includes(
-          "all"
-        )}`
-      );
-      console.log(
-        `[CALENDAR-QUERY] Has 'all' in meetingTypes: ${meetingTypes.includes(
-          "all"
-        )}`
-      );
-
       console.log(
         `[Debug-CLIENT-API] Fetching timeslots using WIDE DATE RANGE (±3 months): ${fetchStartDate.toISOString()} to ${fetchEndDate.toISOString()}`
       );
@@ -490,38 +349,40 @@ export default function Calendar() {
         }
 
         const data = await response.json();
-        console.log(
-          `[CALENDAR-QUERY] Received ${data.length} timeslots from server`
-        );
+        console.log(`Received ${data.length} timeslots from server`);
+
+        // Log Saturday slots
+        const saturdaySlots = data.filter((slot: any) => {
+          const date = new Date(slot.startTime);
+          return date.getDay() === 6; // 6 = Saturday
+        });
+
+        if (saturdaySlots.length > 0) {
+          console.log(
+            `Successfully retrieved ${saturdaySlots.length} Saturday slots:`
+          );
+          saturdaySlots.forEach((slot: any) => {
+            console.log(
+              `Saturday slot ID=${slot.id}: ${new Date(
+                slot.startTime
+              ).toISOString()}`
+            );
+          });
+        }
 
         return data;
       } catch (error) {
-        console.error("[CALENDAR-QUERY] Error fetching timeslots:", error);
+        console.error("Error fetching timeslots:", error);
         throw error;
       }
     },
-    // Only run the query when initialization is complete AND client types are actually set
-    // This is the critical fix for the first load issue
-    enabled:
-      isInitialized && (clientTypes.includes("all") || clientTypes.length > 0),
-    // Add for initial data loading reliability
+    staleTime: 30000, // 30 seconds
+    // Added for initial data loading reliability
     refetchOnMount: true,
     refetchOnWindowFocus: true,
-    staleTime: 5000, // Shorter stale time for troubleshooting
+    // Remove delay from initialization
+    initialDataUpdatedAt: 0,
   });
-
-  // Force a refetch whenever client types or meeting types change to ensure consistent data
-  useEffect(() => {
-    if (
-      isInitialized &&
-      (clientTypes.includes("all") || clientTypes.length > 0)
-    ) {
-      console.log(
-        "[CALENDAR-FILTER] Client or meeting types changed, forcing timeslot refetch"
-      );
-      queryClient.invalidateQueries({ queryKey: ["timeslots"] });
-    }
-  }, [clientTypes, meetingTypes, isInitialized, queryClient]);
 
   // Custom view change handler to refresh reference time
   const handleViewChange = (newView: "week" | "month") => {
@@ -595,6 +456,91 @@ export default function Calendar() {
     mutate(formData);
   };
 
+  // Handle client type change - only allowed for admin
+  const handleClientTypeChange = (values: string[]) => {
+    if (!isAdmin) return; // Only admins can change client type directly
+
+    console.log(`[Debug] User selected client types: ${values.join(", ")}`);
+
+    // If the values array is empty, default to "all"
+    if (values.length === 0) {
+      values = ["all"];
+    }
+    // Check if "all" is added while other options exist
+    else if (values.includes("all") && values.length > 1) {
+      // If current selection doesn't include "all" but new selection does, just use "all"
+      if (!clientTypes.includes("all")) {
+        values = ["all"];
+      }
+      // If current selection includes "all" and user selects another type, remove "all"
+      else {
+        values = values.filter((v) => v !== "all");
+      }
+    }
+
+    // Force update client types state
+    setClientTypes(values);
+
+    // When client types change, we should update fullClientTypes accordingly
+    const hasAllClientType = values.includes("all");
+
+    if (hasAllClientType) {
+      setFullClientTypes([]);
+    } else {
+      // For non-"all" values, attempt to find matching client data
+      if (clientData?.clients) {
+        const newFullClientTypes: string[] = [];
+
+        values.forEach((value) => {
+          // First try to match by ID
+          const numericId = !isNaN(parseInt(value))
+            ? parseInt(value)
+            : undefined;
+
+          // Find the client by ID or type name directly
+          const matchedClient =
+            numericId !== undefined
+              ? clientData.clients.find((client) => client.id === numericId)
+              : clientData.clients.find((client) => client.type === value);
+
+          if (matchedClient) {
+            // Use the client.type directly from the matched client, which is the raw value from the server
+            newFullClientTypes.push(matchedClient.type);
+            console.log(
+              `[Debug] Matched client: ${matchedClient.type} (ID: ${matchedClient.id})`
+            );
+          } else {
+            // If not found, use the raw value
+            newFullClientTypes.push(value);
+            console.log(
+              `[Debug] Using direct value as fullClientType: ${value}`
+            );
+          }
+        });
+
+        setFullClientTypes(newFullClientTypes);
+      } else {
+        // If no client data available, use the raw values
+        setFullClientTypes(values);
+      }
+    }
+
+    // Update URL with wouter navigation
+    if (values.length === 1 && values[0] === "all") {
+      navigate(viewMode === "admin" ? "/admin" : "/calendar");
+    } else {
+      // Join all selected values with commas for the URL
+      navigate(
+        `${
+          viewMode === "admin" ? "/admin" : "/calendar"
+        }?type=${encodeURIComponent(values.join(","))}`
+      );
+    }
+
+    // Force refetch timeslots with the new client types
+    queryClient.invalidateQueries({ queryKey: ["timeslots"] });
+  };
+
   // Handle meeting type change
   const handleMeetingTypeChange = (values: string[]) => {
     // If the values array is empty, default to "all"
@@ -639,19 +585,12 @@ export default function Calendar() {
 
   // Get timeslots for the current view - now using our service function
   const currentViewTimeslots = useMemo(() => {
-    if (!timeslots || timeslots.length === 0) {
-      console.log(
-        "[CALENDAR-FILTER] No timeslots to filter, returning empty array"
-      );
-      return [];
-    }
+    if (!timeslots || timeslots.length === 0) return [];
 
     // Always get a fresh current time for each render
     const freshCurrentTime = getNowInIsrael();
     console.log(
-      `[CALENDAR-FILTER] Filtering ${
-        timeslots.length
-      } timeslots with time: ${freshCurrentTime.toISOString()}`
+      `Getting fresh time for filtering: ${freshCurrentTime.toISOString()}`
     );
 
     // Use our service function with the fresh current time
@@ -666,7 +605,7 @@ export default function Calendar() {
   }, [timeslots, view, currentDate, clientTypes, meetingTypes]); // Intentionally NOT using referenceTime
 
   console.log(
-    `[CALENDAR-RENDER] Rendering with ${currentViewTimeslots.length} timeslots for ${view} view (from total ${timeslots.length})`
+    `Using ${currentViewTimeslots.length} timeslots for ${view} view (from total ${timeslots.length})`
   );
 
   if (currentViewTimeslots.length > 0) {
