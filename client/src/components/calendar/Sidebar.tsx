@@ -132,12 +132,7 @@ export default function Sidebar({
 
     // If 'all' is selected or in admin view, collect all meeting types from all clients
     if (clientTypes.includes("all") && viewMode === "admin") {
-      // If data.meetingTypes is available, use it
-      if (data.meetingTypes) {
-        return normalizeMeetingTypes(data.meetingTypes);
-      }
-
-      // Otherwise, extract meeting types from all clients
+      // Extract meeting types from all clients
       const allMeetingTypes = new Set<string>();
       data.clients.forEach((client) => {
         if (client.meetings) {
@@ -271,11 +266,10 @@ export default function Sidebar({
         }
       });
 
-      // Filter to only meeting types applicable to selected client types
+      // Use the comprehensive set of meeting types from ALL selected client types
+      // This is OR logic - any meeting type from any selected client type is included
       if (allowedMeetingTypes.size > 0) {
-        applicableMeetingTypes = applicableMeetingTypes.filter((type) =>
-          allowedMeetingTypes.has(type)
-        );
+        applicableMeetingTypes = Array.from(allowedMeetingTypes);
       }
     }
 

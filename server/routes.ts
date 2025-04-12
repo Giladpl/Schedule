@@ -74,279 +74,68 @@ export async function registerRoutes(app: Express): Promise<void> {
   // API routes
   app.get("/api/timeslots", async (req, res) => {
     try {
-      const { start, end, type, types, typeIds, meetingType, meetingTypes } =
-        req.query;
+      const { start, end } = req.query;
+      console.log(`[Debug-SERVER] API Call received for timeslots from ${start} to ${end}`);
 
-      // Validate start and end are provided
-      if (!start || !end) {
-        return res.status(400).json({
-          error: "Both start and end dates are required",
-        });
-      }
-
-      // Parse dates
-      const startDate = new Date(start as string);
-      const endDate = new Date(end as string);
-
-      // Get timeslots for the date range
-      let timeslots = await storage.getTimeslotsByDateRange(startDate, endDate);
-
-      // Early return for empty results to avoid processing
-      if (!timeslots.length) {
-        return res.json([]);
-      }
-
-      // ---------------- CLIENT TYPE FILTERING ----------------
+      // Extract client types from URL parameters
+      // New logic to handle multiple client types in 'types' parameter
+      const clientTypesParam = req.query.types as string;
       let targetClientTypes: string[] = [];
 
-      // Collect all client type parameters
-      if (type && type !== "all") {
-        targetClientTypes.push(type as string);
+      if (clientTypesParam) {
+        console.log(`[Debug-SERVER] Client types from URL: ${clientTypesParam}`);
+        targetClientTypes = clientTypesParam.split(',');
       }
 
-      if (types) {
-        const typesArray = (types as string).split(",").filter(Boolean);
-        targetClientTypes.push(...typesArray);
-      }
+      console.log(`[Debug-SERVER] Target client types for filtering: ${JSON.stringify(targetClientTypes)}`);
 
-      if (typeIds) {
-        const typeIdsArray = (typeIds as string).split(",").filter(Boolean);
-        targetClientTypes.push(...typeIdsArray);
-      }
-
-      // If no client types specified or only "all", treat as "all"
-      const hasSpecificClientTypes =
-        targetClientTypes.length > 0 && !targetClientTypes.includes("all");
-
-      // STEP 1: Apply client type filtering if specific types are selected
-      if (hasSpecificClientTypes) {
-        console.log(
-          `Filtering by client types: ${targetClientTypes.join(", ")}`
-        );
-
-        // Simple OR logic for client types
-        timeslots = timeslots.filter((slot) => {
-          // If slot is for "all" clients or matches any selected client type
-          return (
-            slot.clientType === "all" ||
-            targetClientTypes.includes(slot.clientType)
-          );
-        });
-
-        console.log(
-          `After client type filtering: ${timeslots.length} timeslots remaining`
-        );
-      }
-
-      // ---------------- MEETING TYPE FILTERING ----------------
+      // Extract meeting types from URL parameters
+      const meetingTypesParam = req.query.meetingTypes as string;
       let targetMeetingTypes: string[] = [];
 
-      // Collect all meeting type parameters
-      if (meetingType && meetingType !== "all") {
-        targetMeetingTypes.push(meetingType as string);
+      if (meetingTypesParam) {
+        console.log(`[Debug-SERVER] Meeting types from URL: ${meetingTypesParam}`);
+        targetMeetingTypes = meetingTypesParam.split(',');
       }
 
-      if (meetingTypes && meetingTypes !== "all") {
-        const meetingTypesArray = (meetingTypes as string)
-          .split(",")
-          .filter(Boolean);
-        targetMeetingTypes.push(...meetingTypesArray);
+      // Get all client types from the database if none specified or 'all' included
+      if (targetClientTypes.length === 0 || targetClientTypes.includes('all')) {
+        const allClientTypes = await getClientTypes();
+        targetClientTypes = allClientTypes;
+        console.log(`[Debug-SERVER] Using all client types: ${JSON.stringify(targetClientTypes)}`);
       }
 
-      // If no meeting types specified or only "all", treat as "all"
-      const hasSpecificMeetingTypes =
-        targetMeetingTypes.length > 0 && !targetMeetingTypes.includes("all");
-
-      // STEP 2: Apply meeting type filtering if specific types are selected
-      if (hasSpecificMeetingTypes) {
-        console.log(
-          `Filtering by meeting types: ${targetMeetingTypes.join(", ")}`
-        );
-
-        // Simple OR logic for meeting types
-        timeslots = timeslots.filter((slot) => {
-          const slotMeetingTypes = slot.meetingTypes
-            .split(",")
-            .map((t) => t.trim())
-            .filter(Boolean);
-
-          // Check if ANY of the timeslot's meeting types match ANY of the selected types
-          return slotMeetingTypes.some((type) =>
-            targetMeetingTypes.includes(type)
-          );
-        });
-
-        console.log(
-          `After meeting type filtering: ${timeslots.length} timeslots remaining`
-        );
+      // Get all meeting types from the database if none specified or 'all' included
+      if (targetMeetingTypes.length === 0 || targetMeetingTypes.includes('all')) {
+        const allMeetingTypes = await getMeetingTypes();
+        targetMeetingTypes = allMeetingTypes;
+        console.log(`[Debug-SERVER] Using all meeting types: ${JSON.stringify(targetMeetingTypes)}`);
       }
 
-      // STEP 3: Filter timeslots based on client rule compatibility
-      // We need to ensure that the meeting types in each timeslot are actually applicable to the client types
-      if (hasSpecificClientTypes) {
-        // Fetch client rules to check meeting type compatibility
-        const clientRules = await storage.getClientRules();
+      // Get compatible meeting types for selected client types
+      const compatibleMeetingTypes = await getCompatibleMeetingTypes(targetClientTypes);
+      console.log(`[Debug-SERVER] Compatible meeting types: ${JSON.stringify(compatibleMeetingTypes)}`);
 
-        // Create a mapping of client type to allowed meeting types
-        const clientTypeToMeetingTypes: Record<string, Set<string>> = {};
+      // Get all timeslots
+      const allTimeslots = await storage.getTimeslots();
 
-        // Populate the mapping
-        clientRules.forEach(rule => {
-          if (rule.isActive && rule.clientType !== "all" && rule.allowedTypes && rule.duration > 0) {
-            // Use both ID and type as keys for compatibility with different parts of the app
-            const keys = [rule.clientType];
-            if (rule.rowId !== undefined && rule.rowId !== null) {
-              keys.push(rule.rowId.toString());
-            }
+      // Filter timeslots based on selected client types and meeting types
+      const filteredTimeslots = allTimeslots.filter(slot => {
+        // Check if slot's meeting type is compatible with any selected client type (OR logic)
+        const slotMeetingTypes = slot.meetingTypes.split(',').map(t => t.trim());
+        const hasCompatibleMeetingType = slotMeetingTypes.some(mt => compatibleMeetingTypes.includes(mt));
 
-            keys.forEach(key => {
-              if (!clientTypeToMeetingTypes[key]) {
-                clientTypeToMeetingTypes[key] = new Set<string>();
-              }
-              clientTypeToMeetingTypes[key].add(rule.allowedTypes);
-            });
-          }
-        });
+        // Also check if the meeting type is in the selected meeting types
+        const hasMeetingTypeSelected = slotMeetingTypes.some(mt => targetMeetingTypes.includes(mt));
 
-        // Filter timeslots to only include those with meeting types compatible with the selected client types
-        timeslots = timeslots.filter(slot => {
-          // If the slot has a specific client type, check if it matches any of the target client types
-          if (slot.clientType !== "all") {
-            return targetClientTypes.includes(slot.clientType);
-          }
-
-          // For "all" client type slots, check if the meeting types are compatible with any of the target client types
-          const slotMeetingTypes = slot.meetingTypes
-            .split(",")
-            .map(t => t.trim())
-            .filter(Boolean);
-
-          // Check if ANY of the target client types supports ANY of the slot's meeting types
-          return targetClientTypes.some(clientType => {
-            // Get the allowed meeting types for this client type
-            const allowedMeetingTypes = clientTypeToMeetingTypes[clientType];
-            if (!allowedMeetingTypes) return false;
-
-            // Check if any of the slot's meeting types are allowed for this client type
-            return slotMeetingTypes.some(meetingType =>
-              allowedMeetingTypes.has(meetingType)
-            );
-          });
-        });
-
-        console.log(
-          `After client-meeting compatibility filtering: ${timeslots.length} timeslots remaining`
-        );
-      }
-
-      // Filter to include timeslots that are currently active (end time is in future)
-      // This ensures that slots that have already started but haven't ended yet are included
-      const now = new Date();
-      console.log(`[Debug] Current time: ${now.toISOString()}`);
-
-      timeslots = timeslots.filter((slot) => {
-        const slotEndTime = new Date(slot.endTime);
-        const isActive = slotEndTime > now;
-
-        // For debugging
-        if (new Date(slot.startTime).getDay() === 6) {
-          // Saturday
-          console.log(
-            `[Debug] Saturday slot (${slot.id}): Start=${new Date(
-              slot.startTime
-            ).toISOString()}, End=${slotEndTime.toISOString()}, IsActive=${isActive}`
-          );
-        }
-
-        return isActive;
+        return hasCompatibleMeetingType && hasMeetingTypeSelected;
       });
 
-      console.log(
-        `[Debug] After current time filtering: ${timeslots.length} timeslots remaining`
-      );
-
-      // For timeslots that have already started but not ended,
-      // adjust their start time to the next 15-minute boundary from now
-      timeslots = timeslots.map((slot) => {
-        const slotStartTime = new Date(slot.startTime);
-        const slotEndTime = new Date(slot.endTime);
-
-        // If the slot has already started but not ended
-        if (slotStartTime < now) {
-          // Calculate the next 15-minute boundary
-          const next15MinBoundary = new Date(now);
-          const minutes = next15MinBoundary.getMinutes();
-          const remainder = minutes % 15;
-
-          // Round up to the next 15-minute mark
-          next15MinBoundary.setMinutes(minutes + (15 - remainder), 0, 0);
-
-          // Calculate remaining time in minutes
-          const remainingTimeInMinutes =
-            (slotEndTime.getTime() - next15MinBoundary.getTime()) / (1000 * 60);
-
-          // Use a smaller minimum duration (5 minutes instead of 15)
-          // This allows for shorter appointment types
-          if (remainingTimeInMinutes < 5) {
-            console.log(
-              `[Debug] Skipping timeslot (${
-                slot.id
-              }) with only ${remainingTimeInMinutes.toFixed(
-                1
-              )} minutes remaining`
-            );
-            // Mark as unavailable instead of returning null
-            return {
-              ...slot,
-              isAvailable: false, // Make it unavailable rather than filtering it out
-            };
-          }
-
-          // Make sure end time is after start time in all cases
-          if (next15MinBoundary >= slotEndTime) {
-            console.log(
-              `[Debug] Adjusting end time for timeslot (${
-                slot.id
-              }) because rounded start (${next15MinBoundary.toISOString()}) would be >= end (${slotEndTime.toISOString()})`
-            );
-
-            // If rounded start would be after or equal to end time,
-            // keep original start time but mark the remaining time
-            return {
-              ...slot,
-              remainingMinutes: remainingTimeInMinutes,
-            };
-          }
-
-          // Create a modified timeslot with adjusted start time
-          // We need to maintain the same type for startTime
-          const modifiedSlot = {
-            ...slot,
-            startTime: next15MinBoundary,
-            // Keep track of adjusted status and original meeting types to ensure proper rendering
-            wasAdjusted: true,
-            remainingMinutes: remainingTimeInMinutes,
-          };
-
-          console.log(
-            `[Debug] Adjusted timeslot (${
-              slot.id
-            }): Original start=${slotStartTime.toISOString()}, New start=${next15MinBoundary.toISOString()}, Remaining minutes: ${remainingTimeInMinutes.toFixed(
-              1
-            )}`
-          );
-
-          return modifiedSlot;
-        }
-
-        return slot;
-      });
-
-      // Return filtered timeslots
-      return res.json(timeslots);
+      console.log(`[Debug-SERVER] Returning ${filteredTimeslots.length} timeslots after filtering`);
+      res.json(filteredTimeslots);
     } catch (error) {
-      console.error("Error getting timeslots:", error);
-      res.status(500).json({ error: "Failed to get timeslots" });
+      console.error("[ERROR-SERVER] Error in /api/timeslots:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -433,9 +222,6 @@ export async function registerRoutes(app: Express): Promise<void> {
         { meetings: Map<string, number>; rowId?: number | null }
       > = new Map();
 
-      // Create a set to collect all unique meeting types with their durations
-      const allMeetingTypes = new Map<string, number>();
-
       // Process each rule
       rules.forEach((rule) => {
         const clientType = rule.clientType;
@@ -459,11 +245,6 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Only add if valid meeting type and duration
         if (meetingType && meetingType.trim() !== "" && rule.duration > 0) {
           clientData.meetings.set(meetingType, rule.duration);
-
-          // Store in the all meeting types map as well
-          if (!allMeetingTypes.has(meetingType) || rule.duration > allMeetingTypes.get(meetingType)!) {
-            allMeetingTypes.set(meetingType, rule.duration);
-          }
         }
       });
 
@@ -481,12 +262,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             meetings,
             id: clientData.rowId, // Use the rowId from the sheet as the client ID
           };
-        }),
-        // Add meetingTypes field in the expected format
-        meetingTypes: Array.from(allMeetingTypes.entries()).map(([name, duration]) => ({
-          name,
-          duration
-        })),
+        })
       };
 
       res.json(result);
@@ -1731,4 +1507,71 @@ function checkDateRangeContainsSaturday(
   }
 
   return false;
+}
+
+// Helper function to get all client types
+async function getClientTypes(): Promise<string[]> {
+  try {
+    const rules = await storage.getClientRules();
+    const clientTypes = new Set<string>();
+
+    rules.forEach(rule => {
+      if (rule.isActive && rule.clientType !== "all") {
+        clientTypes.add(rule.clientType);
+      }
+    });
+
+    return Array.from(clientTypes);
+  } catch (error) {
+    console.error("Error getting client types:", error);
+    return [];
+  }
+}
+
+// Helper function to get all meeting types
+async function getMeetingTypes(): Promise<string[]> {
+  try {
+    const rules = await storage.getClientRules();
+    const meetingTypes = new Set<string>();
+
+    rules.forEach(rule => {
+      if (rule.isActive && rule.allowedTypes) {
+        meetingTypes.add(rule.allowedTypes);
+      }
+    });
+
+    return Array.from(meetingTypes);
+  } catch (error) {
+    console.error("Error getting meeting types:", error);
+    return [];
+  }
+}
+
+// Helper function to get compatible meeting types for selected client types
+async function getCompatibleMeetingTypes(clientTypes: string[]): Promise<string[]> {
+  console.log(`[Debug-SERVER] Getting compatible meeting types for client types: ${JSON.stringify(clientTypes)}`);
+
+  try {
+    // Use OR logic: a meeting type is compatible if it's supported by ANY of the selected client types
+    const rules = await storage.getClientRules();
+    const compatibleTypes = new Set<string>();
+
+    for (const clientType of clientTypes) {
+      const clientRules = rules.filter(rule =>
+        rule.isActive &&
+        (rule.clientType === clientType || rule.clientType === "all")
+      );
+
+      clientRules.forEach(rule => {
+        if (rule.allowedTypes) {
+          compatibleTypes.add(rule.allowedTypes);
+        }
+      });
+    }
+
+    return Array.from(compatibleTypes);
+  } catch (error) {
+    console.error("Error getting compatible meeting types:", error);
+    return [];
+  }
 }

@@ -91,8 +91,25 @@ export function BookingModal({
   });
 
   const meetingTypes = useMemo(() => {
-    if (!clientData?.meetingTypes) return [];
-    return clientData.meetingTypes;
+    if (!clientData?.clients) return [];
+
+    // Extract unique meeting types from all clients
+    const uniqueMeetingTypes = new Set<string>();
+    const typesWithDurations: Array<{ name: string; duration: number }> = [];
+
+    clientData.clients.forEach((client) => {
+      if (client.meetings) {
+        Object.entries(client.meetings).forEach(([name, duration]) => {
+          uniqueMeetingTypes.add(name);
+          // Store with a default duration (we'll use client-specific durations when needed)
+          if (!typesWithDurations.some((t) => t.name === name)) {
+            typesWithDurations.push({ name, duration: duration as number });
+          }
+        });
+      }
+    });
+
+    return typesWithDurations;
   }, [clientData]);
 
   const form = useForm<FormData>({
@@ -160,23 +177,14 @@ export function BookingModal({
           `[Debug] Using duration for booking: ${segmentDuration} minutes for ${client.type}`
         );
       } else {
-        // Fallback to global meeting types
-        const meetingTypeInfo = meetingTypes.find(
-          (type) => type.name === selectedMeetingType
+        // Find a client that has this meeting type as fallback
+        const clientWithMeetingType = clientData.clients.find(
+          (c) => c.meetings && c.meetings[selectedMeetingType]
         );
 
-        if (meetingTypeInfo) {
-          segmentDuration = meetingTypeInfo.duration;
+        if (clientWithMeetingType) {
+          segmentDuration = clientWithMeetingType.meetings[selectedMeetingType];
         }
-      }
-    } else {
-      // Fallback to global meeting types
-      const meetingTypeInfo = meetingTypes.find(
-        (type) => type.name === selectedMeetingType
-      );
-
-      if (meetingTypeInfo) {
-        segmentDuration = meetingTypeInfo.duration;
       }
     }
 
@@ -197,13 +205,7 @@ export function BookingModal({
       setSelectedTimeSegment(segments[0]);
       form.setValue("startTime", segments[0]);
     }
-  }, [
-    selectedMeetingType,
-    timeslot,
-    meetingTypes,
-    clientData,
-    activeClientType,
-  ]);
+  }, [selectedMeetingType, timeslot, clientData, activeClientType]);
 
   const handleSubmit = async (values: FormData) => {
     if (!timeslot || !selectedMeetingType) return;
@@ -237,23 +239,14 @@ export function BookingModal({
           `[Debug] Using duration for booking: ${duration} minutes for ${client.type}`
         );
       } else {
-        // Fallback to global meeting types
-        const meetingTypeInfo = meetingTypes.find(
-          (type) => type.name === selectedMeetingType
+        // Find a client that has this meeting type as fallback
+        const clientWithMeetingType = clientData.clients.find(
+          (c) => c.meetings && c.meetings[selectedMeetingType]
         );
 
-        if (meetingTypeInfo) {
-          duration = meetingTypeInfo.duration;
+        if (clientWithMeetingType) {
+          duration = clientWithMeetingType.meetings[selectedMeetingType];
         }
-      }
-    } else {
-      // Fallback to global meeting types
-      const meetingTypeInfo = meetingTypes.find(
-        (type) => type.name === selectedMeetingType
-      );
-
-      if (meetingTypeInfo) {
-        duration = meetingTypeInfo.duration;
       }
     }
 
@@ -442,22 +435,18 @@ export function BookingModal({
                           `[Debug] UI showing duration: ${duration} for ${client.type} - ${type}`
                         );
                       } else {
-                        // Fallback to global meeting types
-                        const typeInfo = meetingTypes.find(
-                          (t) => t.name === type
+                        // Find a client that has this meeting type as fallback
+                        const clientWithMeetingType = clientData.clients.find(
+                          (c) => c.meetings && c.meetings[type]
                         );
-                        if (typeInfo) {
-                          duration = typeInfo.duration;
+
+                        if (clientWithMeetingType) {
+                          duration = clientWithMeetingType.meetings[type];
                         }
                       }
                     } else {
-                      // Fallback to global meeting types
-                      const typeInfo = meetingTypes.find(
-                        (t) => t.name === type
-                      );
-                      if (typeInfo) {
-                        duration = typeInfo.duration;
-                      }
+                      // Default fallback (if no client data available)
+                      duration = 30;
                     }
 
                     return (

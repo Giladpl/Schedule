@@ -14,6 +14,7 @@ import WeekView from "@/components/calendar/WeekView";
 import {
   createBooking,
   fetchClientData,
+  filterTimeslots,
   getClientTypeDisplayName,
   syncCalendar,
 } from "@/lib/calendarService";
@@ -47,6 +48,8 @@ export default function Calendar() {
   // States - initialize with today's date
   const [currentDate, setCurrentDate] = useState<Date>(getNowInIsrael());
   const [view, setView] = useState<"week" | "month">("week");
+  // Add a reference time state that we'll update when views/dates change
+  const [referenceTime, setReferenceTime] = useState<Date>(getNowInIsrael());
   const [selectedTimeslot, setSelectedTimeslot] = useState<Timeslot | null>(
     null
   );
@@ -266,9 +269,18 @@ export default function Calendar() {
     ],
     queryFn: async () => {
       console.log(
-        `Fetching timeslots using WIDE DATE RANGE (±3 months): ${fetchStartDate.toISOString()} to ${fetchEndDate.toISOString()}`
+        `[Debug-CLIENT-API] Fetching timeslots using WIDE DATE RANGE (±3 months): ${fetchStartDate.toISOString()} to ${fetchEndDate.toISOString()}`
       );
-      console.log(`Client types: ${clientTypes.join(", ")}`);
+      console.log(
+        `[Debug-CLIENT-API] Client types for API call: ${clientTypes.join(
+          ", "
+        )}`
+      );
+      console.log(
+        `[Debug-CLIENT-API] Meeting types for API call: ${meetingTypes.join(
+          ", "
+        )}`
+      );
 
       try {
         // Format dates for API call - ALWAYS USING UNIFIED RANGE
@@ -282,17 +294,28 @@ export default function Calendar() {
 
         // Add client type parameter if not "all"
         if (!clientTypes.includes("all") && clientTypes.length > 0) {
-          const clientType = clientTypes[0];
-          url += `&type=${encodeURIComponent(clientType)}`;
+          // CRITICAL CHANGE: Send all client types as a single comma-separated parameter
+          // This replaces the old approach of only sending the first client type
+          console.log(
+            `[Debug-CLIENT-API] Sending all client types in 'types' parameter: ${clientTypes.join(
+              ","
+            )}`
+          );
+          url += `&types=${encodeURIComponent(clientTypes.join(","))}`;
         }
 
         // Add meeting type parameter if not "all"
         if (!meetingTypes.includes("all") && meetingTypes.length > 0) {
-          const meetingType = meetingTypes[0];
-          url += `&meetingType=${encodeURIComponent(meetingType)}`;
+          // Same approach for meeting types - send all of them
+          console.log(
+            `[Debug-CLIENT-API] Sending all meeting types in 'meetingTypes' parameter: ${meetingTypes.join(
+              ","
+            )}`
+          );
+          url += `&meetingTypes=${encodeURIComponent(meetingTypes.join(","))}`;
         }
 
-        console.log(`Actual API URL: ${url}`);
+        console.log(`[Debug-CLIENT-API] Actual API URL: ${url}`);
 
         const response = await fetch(url);
         if (!response.ok) {
@@ -331,138 +354,19 @@ export default function Calendar() {
     refetchOnWindowFocus: false,
   });
 
-  // Get timeslots for the current view (filter from already fetched data)
-  // Since we're fetching a wide date range (±3 months), we need to apply
-  // precise client-side filtering to show only timeslots relevant to the current view
-  const currentViewTimeslots = useMemo(() => {
-    if (!timeslots || timeslots.length === 0) return [];
+  // Custom view change handler to refresh reference time
+  const handleViewChange = (newView: "week" | "month") => {
+    // Update reference time first
+    setReferenceTime(getNowInIsrael());
+    // Then change view
+    setView(newView);
+  };
 
-    console.log(
-      `All timeslots IDs from API (±3 month range): ${timeslots
-        .map((ts: Timeslot) => ts.id)
-        .join(", ")}`
-    );
-
-    if (view === "week") {
-      // Filter timeslots for the current week - Use proper date handling
-      const weekStart = startOfDay(startOfWeek(currentDate));
-      const weekEnd = endOfDay(endOfWeek(currentDate));
-
-      console.log(
-        `Filtering weekly timeslots from ${weekStart.toISOString()} to ${weekEnd.toISOString()}`
-      );
-
-      // The filtering logic is applied consistently to ALREADY FETCHED data
-      const filteredForWeek = timeslots.filter((slot: Timeslot) => {
-        const slotStart = new Date(slot.startTime);
-        const slotEnd = new Date(slot.endTime);
-
-        // Include if the slot starts during the week or ends during the week or spans the week
-        return (
-          (slotStart >= weekStart && slotStart <= weekEnd) ||
-          (slotEnd >= weekStart && slotEnd <= weekEnd) ||
-          (slotStart <= weekStart && slotEnd >= weekEnd)
-        );
-      });
-
-      console.log(
-        `Weekly filtered timeslot IDs: ${filteredForWeek
-          .map((ts: Timeslot) => ts.id)
-          .join(", ")}`
-      );
-      return filteredForWeek;
-    } else {
-      // For month view, filter the timeslots to the current month
-      const monthStart = startOfDay(startOfMonth(currentDate));
-      const monthEnd = endOfDay(endOfMonth(currentDate));
-
-      console.log(
-        `Filtering monthly timeslots from ${monthStart.toISOString()} to ${monthEnd.toISOString()}`
-      );
-
-      // Apply similar filtering logic for month view
-      const filteredForMonth = timeslots.filter((slot: Timeslot) => {
-        const slotStart = new Date(slot.startTime);
-        const slotEnd = new Date(slot.endTime);
-
-        // Include if the slot starts during the month or ends during the month or spans the month
-        return (
-          (slotStart >= monthStart && slotStart <= monthEnd) ||
-          (slotEnd >= monthStart && slotEnd <= monthEnd) ||
-          (slotStart <= monthStart && slotEnd >= monthEnd)
-        );
-      });
-
-      console.log(
-        `Monthly filtered timeslot IDs: ${filteredForMonth
-          .map((ts: Timeslot) => ts.id)
-          .join(", ")}`
-      );
-      return filteredForMonth;
-    }
-  }, [timeslots, view, currentDate]);
-
-  console.log(
-    `Using ${currentViewTimeslots.length} timeslots for ${view} view (from total ${timeslots.length})`
-  );
-
-  if (currentViewTimeslots.length > 0) {
-    // Log the first few timeslots for debugging
-    console.log(`Sample timeslots for ${view} view:`);
-    currentViewTimeslots
-      .slice(0, Math.min(2, currentViewTimeslots.length))
-      .forEach((slot: Timeslot, i: number) => {
-        console.log(
-          `Slot ${i}: ID=${slot.id}, Start=${new Date(
-            slot.startTime
-          ).toISOString()}, Types=${slot.meetingTypes}`
-        );
-      });
-  }
-
-  // Error handling for timeslots API
-  useEffect(() => {
-    if (apiError) {
-      console.error("API Error:", apiError);
-      toast({
-        title: "Error",
-        description: "Failed to load timeslots. Please try again later.",
-        variant: "destructive",
-      });
-    }
-  }, [apiError, toast]);
-
-  // Loading state for booking form submission
-  const { mutate, isPending: isBooking } = useMutation({
-    mutationFn: createBooking,
-    onSuccess: (data: Booking) => {
-      // Close booking modal
-      setBookingModalOpen(false);
-
-      // Store booking details for confirmation
-      setBookingDetails({
-        name: data.name,
-        email: data.email,
-        phone: data.phone ?? undefined,
-        meetingType: data.meetingType,
-      });
-      setConfirmationModalOpen(true);
-
-      // Refetch timeslots to update availability
-      queryClient.invalidateQueries({ queryKey: ["timeslots"] });
-    },
-    onError: (error: Error) => {
-      console.error("Error creating booking:", error);
-      toast({
-        title: "Booking Error",
-        description: "Failed to create booking. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Navigation handlers
+  // Custom date change handlers with reference time updates
   const goToNextPeriod = () => {
+    // Update reference time first
+    setReferenceTime(getNowInIsrael());
+    // Then change date
     if (view === "week") {
       setCurrentDate((prev) => addDays(prev, 7));
     } else {
@@ -473,6 +377,9 @@ export default function Calendar() {
   };
 
   const goToPreviousPeriod = () => {
+    // Update reference time first
+    setReferenceTime(getNowInIsrael());
+    // Then change date
     if (view === "week") {
       setCurrentDate((prev) => addDays(prev, -7));
     } else {
@@ -483,6 +390,9 @@ export default function Calendar() {
   };
 
   const goToToday = () => {
+    // Update reference time first
+    setReferenceTime(getNowInIsrael());
+    // Then change date
     setCurrentDate(getNowInIsrael());
   };
 
@@ -648,6 +558,107 @@ export default function Calendar() {
     syncGoogleCalendar();
   }, [toast]);
 
+  // Add an effect to refresh data when view changes
+  useEffect(() => {
+    console.log(`View changed to ${view} - forcing data refresh`);
+
+    // Clear React Query cache for timeslots to ensure fresh filtering
+    queryClient.invalidateQueries({ queryKey: ["timeslots"] });
+
+    // Also clear any other caches that might affect view rendering
+    queryClient.refetchQueries({ queryKey: ["timeslots"] });
+  }, [view, queryClient]);
+
+  // Update reference time on a regular interval
+  useEffect(() => {
+    // Refresh reference time every minute
+    const timerId = setInterval(() => {
+      setReferenceTime(getNowInIsrael());
+    }, 60000); // Every minute
+
+    return () => clearInterval(timerId);
+  }, []);
+
+  // Get timeslots for the current view - now using our service function
+  const currentViewTimeslots = useMemo(() => {
+    if (!timeslots || timeslots.length === 0) return [];
+
+    // Always get a fresh current time for each render
+    const freshCurrentTime = getNowInIsrael();
+    console.log(
+      `Getting fresh time for filtering: ${freshCurrentTime.toISOString()}`
+    );
+
+    // Use our service function with the fresh current time
+    return filterTimeslots(
+      timeslots,
+      view,
+      currentDate,
+      clientTypes,
+      meetingTypes,
+      freshCurrentTime // Pass fresh time to ensure consistent behavior
+    );
+  }, [timeslots, view, currentDate, clientTypes, meetingTypes]); // Intentionally NOT using referenceTime
+
+  console.log(
+    `Using ${currentViewTimeslots.length} timeslots for ${view} view (from total ${timeslots.length})`
+  );
+
+  if (currentViewTimeslots.length > 0) {
+    // Log the first few timeslots for debugging
+    console.log(`Sample timeslots for ${view} view:`);
+    currentViewTimeslots
+      .slice(0, Math.min(2, currentViewTimeslots.length))
+      .forEach((slot: Timeslot, i: number) => {
+        console.log(
+          `Slot ${i}: ID=${slot.id}, Start=${new Date(
+            slot.startTime
+          ).toISOString()}, Types=${slot.meetingTypes}`
+        );
+      });
+  }
+
+  // Error handling for timeslots API
+  useEffect(() => {
+    if (apiError) {
+      console.error("API Error:", apiError);
+      toast({
+        title: "Error",
+        description: "Failed to load timeslots. Please try again later.",
+        variant: "destructive",
+      });
+    }
+  }, [apiError, toast]);
+
+  // Loading state for booking form submission
+  const { mutate, isPending: isBooking } = useMutation({
+    mutationFn: createBooking,
+    onSuccess: (data: Booking) => {
+      // Close booking modal
+      setBookingModalOpen(false);
+
+      // Store booking details for confirmation
+      setBookingDetails({
+        name: data.name,
+        email: data.email,
+        phone: data.phone ?? undefined,
+        meetingType: data.meetingType,
+      });
+      setConfirmationModalOpen(true);
+
+      // Refetch timeslots to update availability
+      queryClient.invalidateQueries({ queryKey: ["timeslots"] });
+    },
+    onError: (error: Error) => {
+      console.error("Error creating booking:", error);
+      toast({
+        title: "Booking Error",
+        description: "Failed to create booking. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   return (
     <div className="h-full flex flex-col" dir="rtl">
       <CalendarHeader
@@ -657,7 +668,7 @@ export default function Calendar() {
         onNext={goToNextPeriod}
         onToday={goToToday}
         currentView={view}
-        onViewChange={setView}
+        onViewChange={handleViewChange}
         isPreviousDisabled={isPreviousDisabled()}
         isAdmin={isAdmin}
         onViewModeToggle={handleViewModeToggle}

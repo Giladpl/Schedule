@@ -1,10 +1,10 @@
 import { Booking, ClientRuleWithDisplayName, Timeslot } from "@shared/schema";
-import { endOfDay, startOfDay } from "date-fns";
+import { endOfDay, endOfMonth, endOfWeek, startOfDay, startOfMonth, startOfWeek } from "date-fns";
 import { apiRequest } from "./queryClient";
 import {
-    formatDateInIsrael,
-    formatTimeInIsrael,
-    formatTimeRangeInIsrael,
+  formatDateInIsrael,
+  formatTimeInIsrael,
+  formatTimeRangeInIsrael
 } from "./timeUtils";
 
 // Type for the booking form
@@ -241,115 +241,133 @@ export function groupTimeslotsByDay(
 }
 
 /**
- * Shared function for filtering timeslots that works exactly the same for both weekly and monthly views.
- * This ensures consistent behavior between different calendar views.
+ * Ultimate consolidated filtering function that both weekly and monthly views MUST use
+ * to ensure 100% consistent behavior.
+ *
+ * @param timeslots The full list of timeslots to filter
+ * @param viewType The current view type ('week' or 'month')
+ * @param currentDate The current date being viewed
+ * @param clientTypes The active client types
+ * @param meetingTypes The active meeting types
+ * @param currentTime The current time for filtering (passed from parent)
+ * @returns Filtered timeslots ready to be displayed
  */
-export function filterTimeslots(
+export function filterCalendarTimeslots(
   timeslots: Timeslot[],
-  currentTime: Date,
-  activeClientTypes: string[] = ["all"]
+  viewType: "week" | "month",
+  currentDate: Date,
+  clientTypes: string[] = ["all"],
+  meetingTypes: string[] = ["all"],
+  currentTime: Date
 ): Timeslot[] {
-  console.log(`Filtering ${timeslots.length} timeslots`);
-
   if (!timeslots || timeslots.length === 0) {
+    console.log("No timeslots to filter");
     return [];
   }
 
-  // Apply standard filtering without special Saturday handling
-  const filteredSlots = timeslots.filter(slot => {
+  console.log(`[SHARED-FILTER] Starting filtering ${timeslots.length} timeslots for ${viewType} view`);
+  console.log(`[SHARED-FILTER] Client types: ${clientTypes.join(', ')}`);
+  console.log(`[SHARED-FILTER] Meeting types: ${meetingTypes.join(', ')}`);
+  console.log(`[SHARED-FILTER] Current time: ${currentTime.toISOString()}`);
+
+  // STEP 1: Determine date range based on view type
+  const viewStart = viewType === "week"
+    ? startOfDay(startOfWeek(currentDate))
+    : startOfDay(startOfMonth(currentDate));
+
+  const viewEnd = viewType === "week"
+    ? endOfDay(endOfWeek(currentDate))
+    : endOfDay(endOfMonth(currentDate));
+
+  console.log(`[SHARED-FILTER] View date range: ${viewStart.toISOString()} to ${viewEnd.toISOString()}`);
+
+  // STEP 2: First filter by availability and time restrictions
+  const validTimeslots = timeslots.filter(slot => {
     try {
-      // 1. Skip unavailable slots
+      // Skip unavailable slots
       if (!slot.isAvailable) {
         return false;
       }
 
-      // 2. Check client type match
-      const hasAllClientType = activeClientTypes.includes("all");
+      const slotStart = new Date(slot.startTime);
+      const slotEnd = new Date(slot.endTime);
+
+      // Skip invalid dates
+      if (isNaN(slotStart.getTime()) || isNaN(slotEnd.getTime())) {
+        console.error("[SHARED-FILTER] Invalid date in timeslot:", slot);
+        return false;
+      }
+
+      // CRITICAL FILTER: Skip slots that have already ended
+      if (slotEnd <= currentTime) {
+        console.log(`[SHARED-FILTER] Filtering out past timeslot ${slot.id}: ends at ${slotEnd.toISOString()}`);
+        return false;
+      }
+
+      // Check client type match - Using OR logic
+      const hasAllClientType = clientTypes.includes("all");
       const clientTypeMatch =
         hasAllClientType ||
         slot.clientType === "all" ||
-        activeClientTypes.includes(slot.clientType) ||
+        clientTypes.includes(slot.clientType) ||
         (Array.isArray(slot.clientType) &&
-          slot.clientType.some((ct) => activeClientTypes.includes(ct)));
+          slot.clientType.some(ct => clientTypes.includes(ct)));
 
       if (!clientTypeMatch) {
         return false;
       }
 
-      // 3. Skip slots with invalid dates
-      const startTime = new Date(slot.startTime);
-      const endTime = new Date(slot.endTime);
+      // Check meeting type match if applicable
+      if (!meetingTypes.includes("all")) {
+        // Parse slot.meetingTypes - could be a string array or a comma-separated string
+        const slotMeetingTypes = Array.isArray(slot.meetingTypes)
+          ? slot.meetingTypes
+          : typeof slot.meetingTypes === 'string'
+            ? slot.meetingTypes.split(',')
+            : [];
 
-      if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
-        console.error("Invalid date in timeslot:", slot);
-        return false;
-      }
+        const meetingTypeMatch = slotMeetingTypes.some(mt =>
+          meetingTypes.includes(mt.trim())
+        );
 
-      // 4. Skip slots that have completely ended
-      if (endTime <= currentTime) {
-        console.log(`Filtering out past timeslot (ID=${slot.id}): ends at ${endTime.toISOString()}, current time is ${currentTime.toISOString()}`);
-        return false;
+        if (!meetingTypeMatch) {
+          return false;
+        }
       }
 
       return true;
     } catch (error) {
-      console.error("Error filtering timeslot:", error, slot);
+      console.error("[SHARED-FILTER] Error filtering timeslot:", error, slot);
       return false;
     }
   });
 
-  console.log(`After filtering: ${filteredSlots.length} timeslots remaining`);
-  return filteredSlots;
-}
+  console.log(`[SHARED-FILTER] After availability/time filtering: ${validTimeslots.length} timeslots`);
 
-/**
- * Helper function to check if a timeslot should be shown based on filtering criteria.
- * Used by both weekly and monthly views to ensure consistency.
- */
-export function shouldShowTimeslot(
-  timeslot: Timeslot,
-  currentTime: Date,
-  activeClientTypes: string[] = ["all"]
-): boolean {
-  try {
-    // 1. Skip unavailable slots
-    if (!timeslot.isAvailable) {
-      return false;
-    }
+  // STEP 3: Then filter by view date range
+  const viewFilteredTimeslots = validTimeslots.filter(slot => {
+    const slotStart = new Date(slot.startTime);
+    const slotEnd = new Date(slot.endTime);
 
-    // 2. Check client type match
-    const hasAllClientType = activeClientTypes.includes("all");
-    const clientTypeMatch =
-      hasAllClientType ||
-      timeslot.clientType === "all" ||
-      activeClientTypes.includes(timeslot.clientType) ||
-      (Array.isArray(timeslot.clientType) &&
-        timeslot.clientType.some((ct) => activeClientTypes.includes(ct)));
+    // Include if:
+    // 1. The slot starts within the view period
+    // 2. The slot ends within the view period
+    // 3. The slot spans across the entire view period
+    return (
+      (slotStart >= viewStart && slotStart <= viewEnd) || // Starts within period
+      (slotEnd >= viewStart && slotEnd <= viewEnd) ||    // Ends within period
+      (slotStart <= viewStart && slotEnd >= viewEnd)     // Spans period
+    );
+  });
 
-    if (!clientTypeMatch) {
-      return false;
-    }
+  console.log(`[SHARED-FILTER] Final filtered timeslots: ${viewFilteredTimeslots.length}`);
 
-    // 3. Skip slots with invalid dates
-    const startTime = new Date(timeslot.startTime);
-    const endTime = new Date(timeslot.endTime);
-
-    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
-      console.error("Invalid date in timeslot:", timeslot);
-      return false;
-    }
-
-    // 4. Skip slots that have completely ended
-    if (endTime < currentTime) {
-      console.log(`Filtering out past timeslot (ID=${timeslot.id}): ends at ${endTime.toISOString()}, current time is ${currentTime.toISOString()}`);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Error checking if timeslot should be shown:", error, timeslot);
-    return false;
+  // Debug log IDs of filtered timeslots
+  if (viewFilteredTimeslots.length > 0) {
+    console.log(`[SHARED-FILTER] Filtered timeslot IDs: ${viewFilteredTimeslots.map(ts => ts.id).join(', ')}`);
   }
+
+  return viewFilteredTimeslots;
 }
 
 export function getTimeslotDuration(timeslot: Timeslot): number {
@@ -566,4 +584,104 @@ export async function fetchAndProcessTimeslots(
     console.error("Error in fetchAndProcessTimeslots:", error);
     throw error;
   }
+}
+
+/**
+ * Filters timeslots based on the current view, dates, and client/meeting types
+ * FIXED version that filters by start time to ensure consistent behavior
+ */
+export function filterTimeslots(
+  timeslots: Timeslot[],
+  view: "week" | "month",
+  currentDate: Date,
+  clientTypes: string[],
+  meetingTypes: string[],
+  currentTime: Date // Passing current time explicitly for consistent behavior
+): Timeslot[] {
+  if (!timeslots || timeslots.length === 0) return [];
+
+  console.log(`SERVICE FILTERING with time: ${currentTime.toISOString()}`);
+  console.log(`Current view: ${view}, date: ${currentDate.toISOString()}`);
+
+  // Step 1: First filter out all invalid/unavailable/past timeslots
+  const validTimeslots = timeslots.filter((slot: Timeslot) => {
+    try {
+      // Skip unavailable slots
+      if (!slot.isAvailable) return false;
+
+      // Skip slots with invalid dates
+      const slotStart = new Date(slot.startTime);
+      const slotEnd = new Date(slot.endTime);
+      if (isNaN(slotStart.getTime()) || isNaN(slotEnd.getTime())) {
+        return false;
+      }
+
+      // CRITICAL: Skip slots that have already started
+      // This is the key fix - we're comparing against start time, not end time
+      if (slotStart <= currentTime) {
+        console.log(`Excluding past slot ${slot.id} - starts at ${slotStart.toISOString()}`);
+        return false;
+      }
+
+      // Check client type match
+      const hasAllClientType = clientTypes.includes("all");
+      const clientTypeMatch =
+        hasAllClientType ||
+        slot.clientType === "all" ||
+        clientTypes.includes(slot.clientType) ||
+        (Array.isArray(slot.clientType) &&
+          slot.clientType.some((ct: string) => clientTypes.includes(ct)));
+
+      if (!clientTypeMatch) return false;
+
+      // Check meeting type match
+      if (!meetingTypes.includes("all")) {
+        const slotMeetingTypes = Array.isArray(slot.meetingTypes)
+          ? slot.meetingTypes
+          : typeof slot.meetingTypes === "string"
+            ? slot.meetingTypes.split(",")
+            : [];
+
+        const meetingTypeMatch = slotMeetingTypes.some((mt: string) =>
+          meetingTypes.includes(mt.trim())
+        );
+
+        if (!meetingTypeMatch) return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Error in filtering:", error, slot);
+      return false;
+    }
+  });
+
+  console.log(`SERVICE FILTER: ${validTimeslots.length} timeslots passed basic filtering`);
+
+  // Step 2: Filter by current view date range
+  const viewStart = view === "week"
+    ? startOfDay(startOfWeek(currentDate))
+    : startOfDay(startOfMonth(currentDate));
+
+  const viewEnd = view === "week"
+    ? endOfDay(endOfWeek(currentDate))
+    : endOfDay(endOfMonth(currentDate));
+
+  console.log(`SERVICE FILTER: Current ${view} view range: ${viewStart.toISOString()} to ${viewEnd.toISOString()}`);
+
+  // Apply date range filtering for current view
+  const dateFilteredSlots = validTimeslots.filter((slot: Timeslot) => {
+    const slotStart = new Date(slot.startTime);
+    return (
+      slotStart >= viewStart && slotStart <= viewEnd // Only consider start time for view range
+    );
+  });
+
+  console.log(`SERVICE FILTER: ${dateFilteredSlots.length} slots in current ${view} view after date filtering`);
+
+  if (dateFilteredSlots.length > 0) {
+    console.log(`SERVICE FILTER: First slot in view: ID=${dateFilteredSlots[0].id}, ${new Date(dateFilteredSlots[0].startTime).toISOString()}`);
+  }
+
+  return dateFilteredSlots;
 }

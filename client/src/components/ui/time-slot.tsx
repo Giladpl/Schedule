@@ -335,11 +335,23 @@ export function TimeSlot({
 
     // Fallback for known client types
     const fallbackAllowedTypes: Record<string, string[]> = {
+      // Numeric IDs as strings
       "0": ["טלפון", "זום", "פגישה"], // לקוח חדש
       "1": ["טלפון", "פגישה"], // פולי אחים
       "2": ["טלפון", "זום"], // מדריכים+
       "3": ["טלפון", "פגישה"], // מכירת עוגות
+
+      // Hebrew names
+      "לקוח חדש": ["טלפון", "זום", "פגישה"],
+      "פולי אחים": ["טלפון", "פגישה"],
+      "מדריכים+": ["טלפון", "זום"],
+      "מכירת עוגות": ["טלפון", "פגישה"],
+
+      // English name
       new_customer: ["טלפון", "זום", "פגישה"],
+
+      // Special case
+      all: ["טלפון", "זום", "פגישה"],
     };
 
     return fallbackAllowedTypes[clientType] || [];
@@ -376,40 +388,148 @@ export function TimeSlot({
           )
         : activeClientTypes;
 
+    // Enhanced debugging logs
+    console.log(
+      `[Debug-DETAILED] TimeSlot ID ${timeslot.id}: Starting filtering process`
+    );
+    console.log(
+      `[Debug-DETAILED] TimeSlot ID ${
+        timeslot.id
+      }: Client types to check: ${clientTypesToCheck.join(", ")}`
+    );
+    console.log(
+      `[Debug-DETAILED] TimeSlot ID ${
+        timeslot.id
+      }: Available meeting types in timeslot: ${meetingTypesList.join(", ")}`
+    );
+    console.log(
+      `[Debug-DETAILED] TimeSlot ID ${timeslot.id}: timeslot.clientType = ${timeslot.clientType}`
+    );
+    console.log(
+      `[Debug-DETAILED] TimeSlot ID ${
+        timeslot.id
+      }: activeClientTypes = ${activeClientTypes.join(", ")}`
+    );
+
     // If the timeslot is specific to a client type (not "all"), respect that limitation
     if (timeslot.clientType !== "all") {
       // For timeslots with a specific client type, only show meeting types for that client
       const allowedTypes = getAllowedMeetingTypes(timeslot.clientType);
-      return meetingTypesList.filter((type) => allowedTypes.includes(type));
+      console.log(
+        `[Debug-DETAILED] TimeSlot ID ${
+          timeslot.id
+        }: Timeslot has specific client type ${
+          timeslot.clientType
+        }, allowed meeting types: ${allowedTypes.join(", ")}`
+      );
+
+      // Check if this specific client type is compatible with selected client types
+      const isCompatibleWithSelectedTypes =
+        hasAllClientType ||
+        activeClientTypes.includes(timeslot.clientType) ||
+        timeslot.clientType === "all";
+
+      console.log(
+        `[Debug-DETAILED] TimeSlot ID ${timeslot.id}: Is timeslot client type compatible with selection? ${isCompatibleWithSelectedTypes}`
+      );
+
+      // Filter meeting types to those allowed for this specific client type
+      const filteredTypes = meetingTypesList.filter((type) =>
+        allowedTypes.includes(type)
+      );
+      console.log(
+        `[Debug-DETAILED] TimeSlot ID ${
+          timeslot.id
+        }: Filtered meeting types for specific client: ${filteredTypes.join(
+          ", "
+        )}`
+      );
+      return filteredTypes;
     }
 
     if (clientTypesToCheck.length === 0) {
+      console.log(
+        `[Debug-DETAILED] TimeSlot ID ${timeslot.id}: No client types to check, showing all meeting types`
+      );
       return meetingTypesList; // Fallback if no client types are available
     }
 
-    // Filter meeting types based on selected client types
-    const allowedMeetingTypes = new Set<string>();
+    // FIXED: Completely rewritten filtering logic to ensure proper OR behavior
 
-    // Add all meeting types allowed for each selected client type
+    // Get all meeting types from the timeslot
+    const timeslotMeetingTypes = new Set(meetingTypesList);
+
+    // Create a set to track which meeting types are supported by any client type
+    const supportedMeetingTypes = new Set<string>();
+
+    // Detailed logging for each client type's meeting types
+    console.log(
+      `[Debug-DETAILED] TimeSlot ID ${timeslot.id}: === Client Types and Their Meeting Types: ===`
+    );
     clientTypesToCheck.forEach((clientType) => {
       const allowedTypes = getAllowedMeetingTypes(clientType);
-      allowedTypes.forEach((type) => allowedMeetingTypes.add(type));
+      console.log(
+        `[Debug-DETAILED] TimeSlot ID ${
+          timeslot.id
+        }: Client type ${clientType} allows meeting types: ${allowedTypes.join(
+          ", "
+        )}`
+      );
+
+      // Log intersection with timeslot meeting types
+      const intersection = allowedTypes.filter((type) =>
+        timeslotMeetingTypes.has(type)
+      );
+      console.log(
+        `[Debug-DETAILED] TimeSlot ID ${
+          timeslot.id
+        }: Client type ${clientType} intersection with timeslot: ${intersection.join(
+          ", "
+        )}`
+      );
+
+      // Add each allowed type to our set of supported meeting types
+      allowedTypes.forEach((type) => {
+        if (timeslotMeetingTypes.has(type)) {
+          supportedMeetingTypes.add(type);
+        }
+      });
     });
 
-    // Only keep meeting types that are allowed for the selected client types
-    // AND are in the timeslot's meeting types list
-    return meetingTypesList.filter((type) => allowedMeetingTypes.has(type));
+    // Convert the set back to an array, maintaining the original order from meetingTypesList
+    const result = meetingTypesList.filter((type) =>
+      supportedMeetingTypes.has(type)
+    );
+    console.log(
+      `[Debug-DETAILED] TimeSlot ID ${
+        timeslot.id
+      }: Final filtered meeting types: ${result.join(", ")}`
+    );
+    console.log(
+      `[Debug-DETAILED] TimeSlot ID ${timeslot.id}: Will timeslot be hidden? ${
+        result.length === 0
+      }`
+    );
+    return result;
   }, [
     meetingTypesList,
     activeClientTypes,
     hasAllClientType,
     clientData,
     timeslot.clientType,
+    getAllowedMeetingTypes,
   ]);
 
   // Skip rendering completely if there are no allowed meeting types for this client type selection
   // This effectively hides timeslots that aren't applicable to the selected client types
   if (filteredMeetingTypes.length === 0) {
+    console.log(
+      `[Debug-HIDDEN] TimeSlot ${
+        timeslot.id
+      }: HIDING timeslot. Client types: ${activeClientTypes.join(
+        ", "
+      )}, Meeting types in slot: ${meetingTypesList.join(", ")}`
+    );
     return null;
   }
 
