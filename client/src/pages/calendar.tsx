@@ -1,8 +1,7 @@
 import { useToast } from "@/hooks/use-toast";
-import { queryClient } from "@/lib/queryClient";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { BookingModal } from "@/components/calendar/BookingModal";
 import CalendarHeader from "@/components/calendar/CalendarHeader";
@@ -41,8 +40,12 @@ interface ClientRuleFromAPI {
 }
 
 export default function Calendar() {
-  const [location, navigate] = useLocation();
+  console.log("[CALENDAR-INIT] Calendar component initialization started");
+
+  const location = useLocation();
+  const navigate = useNavigate();
   const searchParams = new URLSearchParams(window.location.search);
+  const queryClient = useQueryClient();
   const { toast } = useToast();
 
   // States - initialize with today's date
@@ -120,6 +123,20 @@ export default function Calendar() {
     queryFn: fetchClientData,
     staleTime: 60000, // 1 minute
   });
+
+  // Add tracking for initialization
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Track initial render
+  useEffect(() => {
+    console.log("[CALENDAR-INIT] Calendar component mounted");
+    // Mark component as initialized after mounting
+    setIsInitialized(true);
+
+    return () => {
+      console.log("[CALENDAR-INIT] Calendar component unmounting");
+    };
+  }, []);
 
   // Match client types dynamically based on query param
   useEffect(() => {
@@ -292,8 +309,30 @@ export default function Calendar() {
       fetchEndDate,
       clientTypes,
       meetingTypes,
+      isInitialized, // Add initialization state to query key
     ],
     queryFn: async () => {
+      // IMPORTANT DEBUG MESSAGE: This will show when the query is actually executed
+      console.log(
+        `[CALENDAR-QUERY] QUERY FUNCTION EXECUTING with clientTypes=${JSON.stringify(
+          clientTypes
+        )} and meetingTypes=${JSON.stringify(meetingTypes)}`
+      );
+      console.log(`[CALENDAR-QUERY] Component initialized: ${isInitialized}`);
+      console.log(
+        `[CALENDAR-QUERY] Array lengths: clientTypes=${clientTypes.length}, meetingTypes=${meetingTypes.length}`
+      );
+      console.log(
+        `[CALENDAR-QUERY] Has 'all' in clientTypes: ${clientTypes.includes(
+          "all"
+        )}`
+      );
+      console.log(
+        `[CALENDAR-QUERY] Has 'all' in meetingTypes: ${meetingTypes.includes(
+          "all"
+        )}`
+      );
+
       console.log(
         `[Debug-CLIENT-API] Fetching timeslots using WIDE DATE RANGE (±3 months): ${fetchStartDate.toISOString()} to ${fetchEndDate.toISOString()}`
       );
@@ -349,40 +388,38 @@ export default function Calendar() {
         }
 
         const data = await response.json();
-        console.log(`Received ${data.length} timeslots from server`);
-
-        // Log Saturday slots
-        const saturdaySlots = data.filter((slot: any) => {
-          const date = new Date(slot.startTime);
-          return date.getDay() === 6; // 6 = Saturday
-        });
-
-        if (saturdaySlots.length > 0) {
-          console.log(
-            `Successfully retrieved ${saturdaySlots.length} Saturday slots:`
-          );
-          saturdaySlots.forEach((slot: any) => {
-            console.log(
-              `Saturday slot ID=${slot.id}: ${new Date(
-                slot.startTime
-              ).toISOString()}`
-            );
-          });
-        }
+        console.log(
+          `[INITIAL-LOAD-DEBUG] Received ${data.length} timeslots from server`
+        );
 
         return data;
       } catch (error) {
-        console.error("Error fetching timeslots:", error);
+        console.error("[INITIAL-LOAD-DEBUG] Error fetching timeslots:", error);
         throw error;
       }
     },
-    staleTime: 30000, // 30 seconds
-    // Added for initial data loading reliability
+    // Only run the query when initialization is complete AND client types are actually set
+    // This is the critical fix for the first load issue
+    enabled:
+      isInitialized && (clientTypes.includes("all") || clientTypes.length > 0),
+    // Add for initial data loading reliability
     refetchOnMount: true,
     refetchOnWindowFocus: true,
-    // Remove delay from initialization
-    initialDataUpdatedAt: 0,
+    staleTime: 5000, // Shorter stale time for troubleshooting
   });
+
+  // Force a refetch whenever client types or meeting types change to ensure consistent data
+  useEffect(() => {
+    if (
+      isInitialized &&
+      (clientTypes.includes("all") || clientTypes.length > 0)
+    ) {
+      console.log(
+        "[CALENDAR-FILTER] Client or meeting types changed, forcing timeslot refetch"
+      );
+      queryClient.invalidateQueries({ queryKey: ["timeslots"] });
+    }
+  }, [clientTypes, meetingTypes, isInitialized, queryClient]);
 
   // Custom view change handler to refresh reference time
   const handleViewChange = (newView: "week" | "month") => {
@@ -585,12 +622,19 @@ export default function Calendar() {
 
   // Get timeslots for the current view - now using our service function
   const currentViewTimeslots = useMemo(() => {
-    if (!timeslots || timeslots.length === 0) return [];
+    if (!timeslots || timeslots.length === 0) {
+      console.log(
+        "[CALENDAR-FILTER] No timeslots to filter, returning empty array"
+      );
+      return [];
+    }
 
     // Always get a fresh current time for each render
     const freshCurrentTime = getNowInIsrael();
     console.log(
-      `Getting fresh time for filtering: ${freshCurrentTime.toISOString()}`
+      `[CALENDAR-FILTER] Filtering ${
+        timeslots.length
+      } timeslots with time: ${freshCurrentTime.toISOString()}`
     );
 
     // Use our service function with the fresh current time
@@ -605,7 +649,7 @@ export default function Calendar() {
   }, [timeslots, view, currentDate, clientTypes, meetingTypes]); // Intentionally NOT using referenceTime
 
   console.log(
-    `Using ${currentViewTimeslots.length} timeslots for ${view} view (from total ${timeslots.length})`
+    `[CALENDAR-RENDER] Rendering with ${currentViewTimeslots.length} timeslots for ${view} view (from total ${timeslots.length})`
   );
 
   if (currentViewTimeslots.length > 0) {

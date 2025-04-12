@@ -2,9 +2,9 @@ import { Booking, ClientRuleWithDisplayName, Timeslot } from "@shared/schema";
 import { endOfDay, endOfMonth, endOfWeek, startOfDay, startOfMonth, startOfWeek } from "date-fns";
 import { apiRequest } from "./queryClient";
 import {
-  formatDateInIsrael,
-  formatTimeInIsrael,
-  formatTimeRangeInIsrael
+    formatDateInIsrael,
+    formatTimeInIsrael,
+    formatTimeRangeInIsrael
 } from "./timeUtils";
 
 // Type for the booking form
@@ -598,28 +598,39 @@ export function filterTimeslots(
   meetingTypes: string[],
   currentTime: Date // Passing current time explicitly for consistent behavior
 ): Timeslot[] {
-  if (!timeslots || timeslots.length === 0) return [];
+  console.log(`[DEBUG-FILTER] === FILTER CALLED with ${timeslots?.length || 0} slots ===`);
+  console.log(`[DEBUG-FILTER] View: ${view}, Current Date: ${currentDate?.toISOString()}`);
+  console.log(`[DEBUG-FILTER] ClientTypes: ${JSON.stringify(clientTypes)}`);
+  console.log(`[DEBUG-FILTER] MeetingTypes: ${JSON.stringify(meetingTypes)}`);
+  console.log(`[DEBUG-FILTER] CurrentTime: ${currentTime?.toISOString()}`);
 
-  console.log(`SERVICE FILTERING with time: ${currentTime.toISOString()}`);
-  console.log(`Current view: ${view}, date: ${currentDate.toISOString()}`);
+  if (!timeslots || timeslots.length === 0) {
+    console.log(`[DEBUG-FILTER] No timeslots to filter, returning empty array`);
+    return [];
+  }
 
   // Step 1: First filter out all invalid/unavailable/past timeslots
+  console.log(`[DEBUG-FILTER] Starting basic filtering on ${timeslots.length} slots`);
   const validTimeslots = timeslots.filter((slot: Timeslot) => {
     try {
       // Skip unavailable slots
-      if (!slot.isAvailable) return false;
+      if (!slot.isAvailable) {
+        console.log(`[DEBUG-FILTER] Slot ${slot.id} not available, skipping`);
+        return false;
+      }
 
       // Skip slots with invalid dates
       const slotStart = new Date(slot.startTime);
       const slotEnd = new Date(slot.endTime);
       if (isNaN(slotStart.getTime()) || isNaN(slotEnd.getTime())) {
+        console.log(`[DEBUG-FILTER] Slot ${slot.id} has invalid dates, skipping`);
         return false;
       }
 
       // CRITICAL: Skip slots that have already started
       // This is the key fix - we're comparing against start time, not end time
       if (slotStart <= currentTime) {
-        console.log(`Excluding past slot ${slot.id} - starts at ${slotStart.toISOString()}`);
+        console.log(`[DEBUG-FILTER] Slot ${slot.id} (${slotStart.toISOString()}) is in the past compared to ${currentTime.toISOString()}, skipping`);
         return false;
       }
 
@@ -632,7 +643,10 @@ export function filterTimeslots(
         (Array.isArray(slot.clientType) &&
           slot.clientType.some((ct: string) => clientTypes.includes(ct)));
 
-      if (!clientTypeMatch) return false;
+      if (!clientTypeMatch) {
+        console.log(`[DEBUG-FILTER] Slot ${slot.id} clientType (${slot.clientType}) does not match filter ${JSON.stringify(clientTypes)}, skipping`);
+        return false;
+      }
 
       // Check meeting type match
       if (!meetingTypes.includes("all")) {
@@ -646,17 +660,21 @@ export function filterTimeslots(
           meetingTypes.includes(mt.trim())
         );
 
-        if (!meetingTypeMatch) return false;
+        if (!meetingTypeMatch) {
+          console.log(`[DEBUG-FILTER] Slot ${slot.id} meetingTypes (${slot.meetingTypes}) does not match filter ${JSON.stringify(meetingTypes)}, skipping`);
+          return false;
+        }
       }
 
+      console.log(`[DEBUG-FILTER] Slot ${slot.id} passed basic filtering`);
       return true;
     } catch (error) {
-      console.error("Error in filtering:", error, slot);
+      console.error(`[DEBUG-FILTER] Error filtering slot:`, error, slot);
       return false;
     }
   });
 
-  console.log(`SERVICE FILTER: ${validTimeslots.length} timeslots passed basic filtering`);
+  console.log(`[DEBUG-FILTER] ${validTimeslots.length} slots passed basic filtering out of ${timeslots.length}`);
 
   // Step 2: Filter by current view date range
   const viewStart = view === "week"
@@ -667,21 +685,17 @@ export function filterTimeslots(
     ? endOfDay(endOfWeek(currentDate))
     : endOfDay(endOfMonth(currentDate));
 
-  console.log(`SERVICE FILTER: Current ${view} view range: ${viewStart.toISOString()} to ${viewEnd.toISOString()}`);
+  console.log(`[DEBUG-FILTER] View range: ${viewStart.toISOString()} to ${viewEnd.toISOString()}`);
 
   // Apply date range filtering for current view
   const dateFilteredSlots = validTimeslots.filter((slot: Timeslot) => {
     const slotStart = new Date(slot.startTime);
-    return (
-      slotStart >= viewStart && slotStart <= viewEnd // Only consider start time for view range
-    );
+    const matches = slotStart >= viewStart && slotStart <= viewEnd;
+    console.log(`[DEBUG-FILTER] Slot ${slot.id} (${slotStart.toISOString()}) in current view range? ${matches}`);
+    return matches;
   });
 
-  console.log(`SERVICE FILTER: ${dateFilteredSlots.length} slots in current ${view} view after date filtering`);
-
-  if (dateFilteredSlots.length > 0) {
-    console.log(`SERVICE FILTER: First slot in view: ID=${dateFilteredSlots[0].id}, ${new Date(dateFilteredSlots[0].startTime).toISOString()}`);
-  }
+  console.log(`[DEBUG-FILTER] FINAL: ${dateFilteredSlots.length} slots after all filtering`);
 
   return dateFilteredSlots;
 }
