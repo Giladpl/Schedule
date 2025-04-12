@@ -26,7 +26,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { bookingFormSchema, Timeslot } from "@shared/schema";
 import { useQuery } from "@tanstack/react-query";
 import { Calendar, Clock, Phone, Users, Video } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 
@@ -477,7 +477,13 @@ export function BookingModal({
                           form.setValue("meetingType", type);
                         }}
                       >
-                        {MEETING_TYPE_ICONS[type] || MEETING_TYPE_ICONS.default}
+                        {React.isValidElement(MEETING_TYPE_ICONS[type]) ? (
+                          MEETING_TYPE_ICONS[type]
+                        ) : (
+                          <span className="text-current">
+                            {/* Fallback to default icon */}
+                          </span>
+                        )}
                         <div className="flex flex-col items-start">
                           <span>{type}</span>
                           <span className="text-xs opacity-70">

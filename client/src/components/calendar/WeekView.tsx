@@ -21,12 +21,12 @@ import {
   TimeSlot,
 } from "../ui/time-slot";
 
-// Meeting type colors
+// Meeting type colors - using styles from MEETING_TYPE_STYLES for consistency
 const MEETING_TYPE_COLORS: Record<string, string> = {
-  טלפון: "#34a853", // Green
-  זום: "#4285f4", // Blue
-  פגישה: "#ea4335", // Red
-  default: "#fbbc04", // Yellow
+  טלפון: MEETING_TYPE_STYLES.טלפון.color,
+  זום: MEETING_TYPE_STYLES.זום.color,
+  פגישה: MEETING_TYPE_STYLES.פגישה.color,
+  default: MEETING_TYPE_STYLES.default.color,
 };
 
 interface WeekViewProps {
@@ -295,7 +295,9 @@ function ExpandableTimeslots({
                   title={type}
                 >
                   <span className="mr-1">
-                    {MEETING_TYPE_ICONS[type] || (
+                    {React.isValidElement(MEETING_TYPE_ICONS[type]) ? (
+                      MEETING_TYPE_ICONS[type]
+                    ) : (
                       <Calendar size={10} className="text-white" />
                     )}
                   </span>
