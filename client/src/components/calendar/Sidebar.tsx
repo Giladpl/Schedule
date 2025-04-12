@@ -5,10 +5,11 @@ import {
   MultiSelectOption,
   SimpleMultiSelect,
 } from "@/components/ui/simple-multi-select";
-import { fetchClientData } from "@/lib/calendarService";
+import { fetchClientData, refreshClientRules } from "@/lib/calendarService";
+import { queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { Phone, RefreshCcw, Users, Video } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // Default meeting types if we can't fetch them from server
 const DEFAULT_MEETING_TYPES = ["טלפון", "זום", "פגישה"];
@@ -72,11 +73,42 @@ export default function Sidebar({
   isAdmin = false,
   viewMode = "admin",
 }: SidebarProps) {
+  // Add a state for tracking refresh state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Function to refresh sheet data
+  const refreshSheetData = async () => {
+    try {
+      setIsRefreshing(true);
+      console.log("Refreshing data from Google Sheets...");
+
+      // Call the API to refresh data from Google Sheets
+      await refreshClientRules();
+
+      // After sheet refresh, invalidate the client data query to force a refresh
+      queryClient.invalidateQueries({ queryKey: ["/api/client-data"] });
+
+      console.log("Sheet data refreshed successfully");
+    } catch (error) {
+      console.error("Error refreshing sheet data:", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Effect to refresh data from Google Sheets when component mounts
+  useEffect(() => {
+    // Refresh data from Google Sheets on initial load
+    refreshSheetData();
+  }, []);
+
   // Fetch client data from API
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["/api/client-data"],
     queryFn: fetchClientData,
-    staleTime: 60000, // 1 minute
+    staleTime: 0, // Always fetch fresh data
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
   // Function to get available meeting types based on client types
@@ -367,11 +399,15 @@ export default function Sidebar({
           <Button
             variant="outline"
             className="w-full text-[#1a73e8] border-[#dadce0] hover:bg-[#f1f3f4] mb-4"
-            onClick={() => refetch()}
-            disabled={isLoading}
+            onClick={() => refreshSheetData()}
+            disabled={isLoading || isRefreshing}
           >
             <RefreshCcw className="h-3.5 w-3.5 ml-2" />
-            {isLoading ? "מרענן..." : "רענן נתוני לקוחות"}
+            {isRefreshing
+              ? "מרענן מהגיליון..."
+              : isLoading
+              ? "מרענן..."
+              : "רענן נתוני לקוחות"}
           </Button>
         )}
 
