@@ -24,10 +24,22 @@ const MEETING_TYPE_STYLES: Record<string, { color: string; icon: any }> = {
 
 // Client type colors for the legend
 const CLIENT_TYPE_COLORS: Record<string, string> = {
-  new_customer: "#9c27b0", // Purple
+  // Hebrew names
+  "לקוח חדש": "#9c27b0", // Purple
   "פולי אחים": "#2196f3", // Blue
   "מדריכים+": "#ff9800", // Orange
   "מכירת עוגות": "#4caf50", // Green
+
+  // English equivalents
+  new_customer: "#9c27b0", // Purple - same as לקוח חדש
+
+  // Numeric IDs
+  "0": "#9c27b0", // לקוח חדש - Purple
+  "1": "#2196f3", // פולי אחים - Blue
+  "2": "#ff9800", // מדריכים+ - Orange
+  "3": "#4caf50", // מכירת עוגות - Green
+
+  // Special values
   all: "#607d8b", // Gray-Blue
   default: "#9e9e9e", // Gray
 };
@@ -375,19 +387,27 @@ export default function Sidebar({
                 <h3 className="text-xs font-medium text-[#5f6368] mt-4">
                   סוגי לקוחות:
                 </h3>
-                {legendClientTypes.map((client, index) => (
-                  <div key={index} className="flex items-center mb-2">
-                    <div
-                      className="w-5 h-5 rounded-sm ml-3"
-                      style={{
-                        backgroundColor:
-                          CLIENT_TYPE_COLORS[client.type] ||
-                          CLIENT_TYPE_COLORS.default,
-                      }}
-                    />
-                    <span className="text-sm">{client.type}</span>
-                  </div>
-                ))}
+                {legendClientTypes.map((client, index) => {
+                  // Get the display color - try exact match first, then numeric ID, then default
+                  const clientColor =
+                    CLIENT_TYPE_COLORS[client.type] ||
+                    (client.id !== undefined
+                      ? CLIENT_TYPE_COLORS[`${client.id}`]
+                      : null) ||
+                    CLIENT_TYPE_COLORS.default;
+
+                  return (
+                    <div key={index} className="flex items-center mb-2">
+                      <div
+                        className="w-5 h-5 rounded-sm ml-3"
+                        style={{
+                          backgroundColor: clientColor,
+                        }}
+                      />
+                      <span className="text-sm">{client.type}</span>
+                    </div>
+                  );
+                })}
               </>
             )}
           </div>

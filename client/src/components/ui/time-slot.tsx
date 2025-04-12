@@ -64,19 +64,24 @@ export function stringToColor(str: string): string {
 
 // Map client types to colors - מינימלי ומרחיב באופן דינמי
 export const CLIENT_TYPE_COLORS: Record<string, string> = {
-  // Exactly match the colors defined in Sidebar.tsx
-  new_customer: "#9c27b0", // Purple
+  // Hebrew names
+  "לקוח חדש": "#9c27b0", // Purple
   "פולי אחים": "#2196f3", // Blue
   "מדריכים+": "#ff9800", // Orange
   "מכירת עוגות": "#4caf50", // Green
-  all: "#607d8b", // Gray-Blue
-  default: "#9e9e9e", // Gray
 
-  // Add numeric ID mappings to ensure consistency
+  // English equivalents
+  new_customer: "#9c27b0", // Purple - same as לקוח חדש
+
+  // Numeric IDs
   "0": "#9c27b0", // לקוח חדש - Purple
   "1": "#2196f3", // פולי אחים - Blue
   "2": "#ff9800", // מדריכים+ - Orange
   "3": "#4caf50", // מכירת עוגות - Green
+
+  // Special values
+  all: "#607d8b", // Gray-Blue
+  default: "#9e9e9e", // Gray
 };
 
 // Meeting type to icon mapping
