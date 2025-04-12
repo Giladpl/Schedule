@@ -542,6 +542,10 @@ export default function Calendar() {
       try {
         await syncCalendar();
         console.log("Calendar synced successfully");
+
+        // After syncing, force a refresh of timeslots to ensure data loads on initial render
+        queryClient.invalidateQueries({ queryKey: ["timeslots"] });
+        queryClient.refetchQueries({ queryKey: ["timeslots"] });
       } catch (error) {
         console.error("Error syncing calendar:", error);
         toast({
@@ -556,7 +560,21 @@ export default function Calendar() {
     };
 
     syncGoogleCalendar();
-  }, [toast]);
+  }, [toast, queryClient]); // Add queryClient to dependency array
+
+  // Add an initial data loading effect to ensure data appears on first render
+  useEffect(() => {
+    // Force an immediate refresh of the data when component mounts
+    console.log("Initial component mount - forcing data refresh");
+    queryClient.invalidateQueries({ queryKey: ["timeslots"] });
+
+    // Small delay to ensure state has settled before refetching
+    const timer = setTimeout(() => {
+      queryClient.refetchQueries({ queryKey: ["timeslots"] });
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, []); // Empty dependency array means this runs once on mount
 
   // Add an effect to refresh data when view changes
   useEffect(() => {
