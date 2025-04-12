@@ -296,7 +296,7 @@ export default function MonthView({
 
               {totalSlots > 0 && (
                 <div className="mt-1 space-y-1">
-                  {/* Meeting type indicators */}
+                  {/* Meeting type indicators - only show for compatible client types */}
                   {hasInPersonMeetings && (
                     <div className="text-xs bg-[#ea4335] text-white rounded-sm p-0.5 px-1">
                       {meetingTypeCounts["פגישה"]} in-person

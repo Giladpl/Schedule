@@ -118,7 +118,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const hasSpecificClientTypes =
         targetClientTypes.length > 0 && !targetClientTypes.includes("all");
 
-      // Apply client type filtering if specific types are selected
+      // STEP 1: Apply client type filtering if specific types are selected
       if (hasSpecificClientTypes) {
         console.log(
           `Filtering by client types: ${targetClientTypes.join(", ")}`
@@ -157,7 +157,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const hasSpecificMeetingTypes =
         targetMeetingTypes.length > 0 && !targetMeetingTypes.includes("all");
 
-      // Apply meeting type filtering if specific types are selected
+      // STEP 2: Apply meeting type filtering if specific types are selected
       if (hasSpecificMeetingTypes) {
         console.log(
           `Filtering by meeting types: ${targetMeetingTypes.join(", ")}`
@@ -178,6 +178,64 @@ export async function registerRoutes(app: Express): Promise<void> {
 
         console.log(
           `After meeting type filtering: ${timeslots.length} timeslots remaining`
+        );
+      }
+
+      // STEP 3: Filter timeslots based on client rule compatibility
+      // We need to ensure that the meeting types in each timeslot are actually applicable to the client types
+      if (hasSpecificClientTypes) {
+        // Fetch client rules to check meeting type compatibility
+        const clientRules = await storage.getClientRules();
+
+        // Create a mapping of client type to allowed meeting types
+        const clientTypeToMeetingTypes: Record<string, Set<string>> = {};
+
+        // Populate the mapping
+        clientRules.forEach(rule => {
+          if (rule.isActive && rule.clientType !== "all" && rule.allowedTypes && rule.duration > 0) {
+            // Use both ID and type as keys for compatibility with different parts of the app
+            const keys = [rule.clientType];
+            if (rule.rowId !== undefined && rule.rowId !== null) {
+              keys.push(rule.rowId.toString());
+            }
+
+            keys.forEach(key => {
+              if (!clientTypeToMeetingTypes[key]) {
+                clientTypeToMeetingTypes[key] = new Set<string>();
+              }
+              clientTypeToMeetingTypes[key].add(rule.allowedTypes);
+            });
+          }
+        });
+
+        // Filter timeslots to only include those with meeting types compatible with the selected client types
+        timeslots = timeslots.filter(slot => {
+          // If the slot has a specific client type, check if it matches any of the target client types
+          if (slot.clientType !== "all") {
+            return targetClientTypes.includes(slot.clientType);
+          }
+
+          // For "all" client type slots, check if the meeting types are compatible with any of the target client types
+          const slotMeetingTypes = slot.meetingTypes
+            .split(",")
+            .map(t => t.trim())
+            .filter(Boolean);
+
+          // Check if ANY of the target client types supports ANY of the slot's meeting types
+          return targetClientTypes.some(clientType => {
+            // Get the allowed meeting types for this client type
+            const allowedMeetingTypes = clientTypeToMeetingTypes[clientType];
+            if (!allowedMeetingTypes) return false;
+
+            // Check if any of the slot's meeting types are allowed for this client type
+            return slotMeetingTypes.some(meetingType =>
+              allowedMeetingTypes.has(meetingType)
+            );
+          });
+        });
+
+        console.log(
+          `After client-meeting compatibility filtering: ${timeslots.length} timeslots remaining`
         );
       }
 
@@ -375,6 +433,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         { meetings: Map<string, number>; rowId?: number | null }
       > = new Map();
 
+      // Create a set to collect all unique meeting types with their durations
+      const allMeetingTypes = new Map<string, number>();
+
       // Process each rule
       rules.forEach((rule) => {
         const clientType = rule.clientType;
@@ -398,6 +459,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Only add if valid meeting type and duration
         if (meetingType && meetingType.trim() !== "" && rule.duration > 0) {
           clientData.meetings.set(meetingType, rule.duration);
+
+          // Store in the all meeting types map as well
+          if (!allMeetingTypes.has(meetingType) || rule.duration > allMeetingTypes.get(meetingType)!) {
+            allMeetingTypes.set(meetingType, rule.duration);
+          }
         }
       });
 
@@ -416,6 +482,11 @@ export async function registerRoutes(app: Express): Promise<void> {
             id: clientData.rowId, // Use the rowId from the sheet as the client ID
           };
         }),
+        // Add meetingTypes field in the expected format
+        meetingTypes: Array.from(allMeetingTypes.entries()).map(([name, duration]) => ({
+          name,
+          duration
+        })),
       };
 
       res.json(result);

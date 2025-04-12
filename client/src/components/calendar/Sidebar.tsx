@@ -86,9 +86,29 @@ export default function Sidebar({
       return DEFAULT_MEETING_TYPES;
     }
 
-    // If 'all' is selected or in admin view, return all meeting types
+    // If 'all' is selected or in admin view, collect all meeting types from all clients
     if (clientTypes.includes("all") && viewMode === "admin") {
-      return normalizeMeetingTypes(data.meetingTypes);
+      // If data.meetingTypes is available, use it
+      if (data.meetingTypes) {
+        return normalizeMeetingTypes(data.meetingTypes);
+      }
+
+      // Otherwise, extract meeting types from all clients
+      const allMeetingTypes = new Set<string>();
+      data.clients.forEach((client) => {
+        if (client.meetings) {
+          Object.keys(client.meetings).forEach((meetingType) => {
+            allMeetingTypes.add(meetingType);
+          });
+        }
+      });
+
+      // Convert set to array
+      if (allMeetingTypes.size > 0) {
+        return Array.from(allMeetingTypes);
+      }
+
+      return DEFAULT_MEETING_TYPES;
     }
 
     // If multiple client types are selected, combine their meeting types
@@ -141,7 +161,22 @@ export default function Sidebar({
         ","
       )}`
     );
-    return normalizeMeetingTypes(data.meetingTypes);
+
+    // Try to extract all meeting types from clients as a fallback
+    const allMeetingTypes = new Set<string>();
+    data.clients.forEach((client) => {
+      if (client.meetings) {
+        Object.keys(client.meetings).forEach((meetingType) => {
+          allMeetingTypes.add(meetingType);
+        });
+      }
+    });
+
+    if (allMeetingTypes.size > 0) {
+      return Array.from(allMeetingTypes);
+    }
+
+    return DEFAULT_MEETING_TYPES;
   }, [data, clientTypes, viewMode]);
 
   // Prepare options for MultiSelect components
@@ -164,14 +199,50 @@ export default function Sidebar({
   }, [data]);
 
   const meetingTypeOptions = useMemo<MultiSelectOption[]>(() => {
+    // Get only meeting types that are applicable to the selected client types
+    let applicableMeetingTypes = availableMeetingTypes;
+
+    // If specific client types are selected (not "all"), only show meeting types available for those clients
+    if (
+      !clientTypes.includes("all") &&
+      clientTypes.length > 0 &&
+      data?.clients
+    ) {
+      const allowedMeetingTypes = new Set<string>();
+
+      // For each selected client type, add its available meeting types
+      clientTypes.forEach((clientType) => {
+        // Find the client - first try by ID, then by type name
+        const client = data.clients.find(
+          (c) =>
+            (c.id !== undefined && c.id.toString() === clientType) ||
+            c.type === clientType
+        );
+
+        // If client found, add all its meeting types
+        if (client && client.meetings) {
+          Object.keys(client.meetings).forEach((type) => {
+            allowedMeetingTypes.add(type);
+          });
+        }
+      });
+
+      // Filter to only meeting types applicable to selected client types
+      if (allowedMeetingTypes.size > 0) {
+        applicableMeetingTypes = applicableMeetingTypes.filter((type) =>
+          allowedMeetingTypes.has(type)
+        );
+      }
+    }
+
     return [
       { value: "all", label: "הכל" },
-      ...availableMeetingTypes.map((type) => ({
+      ...applicableMeetingTypes.map((type) => ({
         value: type,
         label: type,
       })),
     ];
-  }, [availableMeetingTypes]);
+  }, [availableMeetingTypes, clientTypes, data]);
 
   // Get client types for admin legend
   const legendClientTypes = useMemo(() => {
