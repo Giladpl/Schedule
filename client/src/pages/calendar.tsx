@@ -1,7 +1,6 @@
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
 
 import { BookingModal } from "@/components/calendar/BookingModal";
 import CalendarHeader from "@/components/calendar/CalendarHeader";
@@ -42,8 +41,6 @@ interface ClientRuleFromAPI {
 export default function Calendar() {
   console.log("[CALENDAR-INIT] Calendar component initialization started");
 
-  const location = useLocation();
-  const navigate = useNavigate();
   const searchParams = new URLSearchParams(window.location.search);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -562,16 +559,16 @@ export default function Calendar() {
       }
     }
 
-    // Update URL with wouter navigation
+    // Update URL without using React Router
     if (values.length === 1 && values[0] === "all") {
-      navigate(viewMode === "admin" ? "/admin" : "/calendar");
+      const path = viewMode === "admin" ? "/admin" : "/calendar";
+      navigateTo(path);
     } else {
       // Join all selected values with commas for the URL
-      navigate(
-        `${
-          viewMode === "admin" ? "/admin" : "/calendar"
-        }?type=${encodeURIComponent(values.join(","))}`
-      );
+      const path = `${
+        viewMode === "admin" ? "/admin" : "/calendar"
+      }?type=${encodeURIComponent(values.join(","))}`;
+      navigateTo(path);
     }
 
     // Force refetch timeslots with the new client types
@@ -706,6 +703,11 @@ export default function Calendar() {
       });
     },
   });
+
+  // Replace navigate with window.location
+  const navigateTo = (path: string) => {
+    window.location.href = path;
+  };
 
   return (
     <div className="h-full flex flex-col" dir="rtl">
